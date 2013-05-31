@@ -2464,3 +2464,42 @@ notFound: /* run it through the decoder(which also runs the instruction), we'll 
 	return(avr_decode_one(avr));
 }
 
+void avr_core_run_many(avr_t* avr) {
+	avr_cycle_count_t run;
+
+checkSleep:
+	nextTimerCycle = avr_cycle_timer_process(avr);
+
+	if (avr->state == cpu_Sleeping) {
+		if (!avr->sreg[S_I]) {
+			if (avr->log)
+				printf("simavr: sleeping with interrupts off, quitting gracefully\n");
+			avr->state = cpu_Done;
+			return;
+		}
+		/*
+		 * try to sleep for as long as we can (?)
+		 */
+		avr->sleep(avr, sleep);
+		avr->cycle += 1 + sleep;
+	}
+	
+
+	
+runLoop:
+	new_pc = avr_run_one_v3(avr);
+
+	if(avr->sreg[S_I]) {
+		if(1 < avr->interrupts.pending_wait) {
+			avr->interrupts.pending_wait--;
+		} if(avr_has_pending_interrupts(avr)) {
+			avr_service_interrupts(avr);
+		}
+	}
+
+	if((avr->state == cpu_Running) && (avr->cycle < runCycles))
+		goto runLoop:
+	else
+		goto checkSleep:
+	
+}
