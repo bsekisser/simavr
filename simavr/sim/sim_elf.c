@@ -322,15 +322,6 @@ int elf_read_firmware(const char * file, elf_firmware_t * firmware)
 		}
 #endif
 	}
-#if ELF_SYMBOLS
-	avr_symbol_t * last = NULL;
-	for (int i = 0; i < firmware->codesize; i++) {
-		if (!firmware->codeline[i])
-			firmware->codeline[i] = last;
-		else
-			last = firmware->codeline[i];
-	}
-#endif
 	uint32_t offset = 0;
 	firmware->flashsize =
 			(data_text ? data_text->d_size : 0) +
