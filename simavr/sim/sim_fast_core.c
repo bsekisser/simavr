@@ -3492,14 +3492,7 @@ UINSTd16r16(muls) {
 
 	SREG();
 	
-#ifdef CORE_FAST_CORE_DIFF_TRACE
-	/* CORE BUG -- UPSTREAM FIXED
-		insruction takes 2 cycles, not one.
-	 */
-	UINST_NEXT_PC_CYCLES(2, 1);
-#else
 	UINST_NEXT_PC_CYCLES(2, 2);
-#endif
 }
 INSTd16r16(muls)
 
