@@ -31,10 +31,10 @@ CFLAGS	+= -Werror
 #CFLAGS	+= -DCONFIG_SIMAVR_TRACE=1
 
 # fast_core is a two part core for testing
-CFLAGS += -DCONFIG_SIMAVR_FAST_CORE
+#CFLAGS += -DCONFIG_SIMAVR_FAST_CORE
 
 # possible bugfix - will incurr speed penalty.
-CFLAGS += -DCONFIG_SIMAVR_FAST_CORE_PIGGYBACKED
+#CFLAGS += -DCONFIG_SIMAVR_FAST_CORE_PIGGYBACKED
 
 all:	obj config libsimavr ${target}
 

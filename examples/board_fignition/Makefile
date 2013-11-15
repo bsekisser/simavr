@@ -32,6 +32,15 @@ IPATH += ${simavr}/simavr/sim
 VPATH = .
 VPATH += ../parts
 
+CFLAGS += -DCONFIG_SIMAVR_FAST_CORE
+CFLAGS += -DCONFIG_SIMAVR_FAST_CORE_GLOBAL_PIGGYBACKED
+
+# added for fast core local include
+CFLAGS += -O3 -Wall -fomit-frame-pointer
+CFLAGS += -march=native
+CFLAGS += -m32 -mfpmath=sse -mmmx -msse
+
+# original CFLAGS line
 CFLAGS += -g
 
 LDFLAGS += -lpthread
@@ -45,7 +54,7 @@ include ${simavr}/Makefile.common
 
 board = ${OBJ}/${target}.elf
 
-#${board} : ${OBJ}/button.o
+${board} : ${OBJ}/sim_fast_core.o
 ${board} : ${OBJ}/${target}.o
 
 ${target}: ${board}

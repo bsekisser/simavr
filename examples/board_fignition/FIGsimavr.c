@@ -24,7 +24,9 @@
 #include <signal.h>
 #include <unistd.h>
 #include <SDL/SDL.h>
+#include <time.h>
 #include <sys/time.h>
+#include <sys/timeb.h>
 
 //#define USE_PTHREAD
 //#define USE_VCD_FILE
@@ -53,7 +55,7 @@
 #include "sim_vcd_file.h"
 #endif
 
-#define kScreenWidth	320
+#define kScreenWidth	320 
 #define kScreenHeight	200
 
 #define kVideoBuffWidth		25
@@ -61,18 +63,18 @@
 
 #define	kVideoPixelWidth	(kVideoBuffWidth<<3)
 #define kVideoScanlines		(kVideoBuffHeight<<3)
-#define kVideoBufferSize	((kVideoBuffWidth*kVideoScanlines)<<2)
+#define kVideoBufferSize	((kVideoPixelWidth*kVideoScanlines)<<2)
 
 #define kVideoPixelTop		((kScreenHeight>>1)-(kVideoScanlines>>1))
 #define kVideoPixelLeft		((kScreenWidth>>1)-(kVideoPixelWidth>>1))
 
+#define KHz(hz) (((uint64_t)hz)*1000ULL)
+#define MHz(hz) KHz(KHz(hz))
 
-#define kFrequency	((uint32_t)(20UL*1000UL*1000UL))
-#define	kRefresh	50
+#define kFrequency	((uint64_t)MHz(20ULL))
+#define	kRefresh	15
 #define	kRefreshCycles	((kFrequency)/kRefresh)
 #define kScanlineCycles	(kRefreshCycles/kVideoScanlines)
-
-double dtime;
 
 enum {
 	IRQ_KBD_ROW1=0,
@@ -151,12 +153,17 @@ avr_vcd_t	vcd_file;
 
 video_fignition_t video_fignition;
 
-#if 0
-static inline uint64_t get_cycles()
-{
-    uint64_t n;
-    __asm__ __volatile__ ("rdtsc" : "=A"(n));
-    return n;
+#if 1
+static inline uint64_t get_cycles(void) {
+   	uint32_t hi, lo;
+   	
+	__asm__ __volatile__ ("xorl %%eax,%%edx" : : : "%eax", "%edx");
+	__asm__ __volatile__ ("xorl %%edx,%%eax" : : : "%eax", "%edx");
+	__asm__ __volatile__ ("xorl %%eax,%%edx" : : : "%eax", "%edx");
+	__asm__ __volatile__ ("xorl %%edx,%%eax" : : : "%eax", "%edx");
+	__asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
+	
+	return(((uint64_t)hi << 32)|(uint64_t)lo);
 }
 static inline uint64_t get_dtime(void) { return(get_cycles()); }
 #else
@@ -166,14 +173,57 @@ static INLINE uint64_t get_dtime(void) {
 	uint64_t	dusec;
 
 	gettimeofday(&t, (struct timezone *)NULL);
+	dsec=MHz(KHz(t.tv_sec));
+	dusec=((uint64_t)t.tv_usec);
 
-	dsec=t.tv_sec;
-	dusec=t.tv_usec;
 
-	return(((dsec*1000*1000)+dusec));
-//	return(dusec);
+	return(dsec + dusec);
 }
 #endif
+
+extern uint64_t calibrate_get_dtime_cycles(void) {
+   	uint64_t start, elapsedTime;
+
+	start = get_dtime();
+	elapsedTime = get_dtime() - start;
+
+	int i;
+	for(i=2; i<=1024; i++) {
+		start = get_dtime();
+		elapsedTime += get_dtime() - start;
+	}
+		
+	return(elapsedTime / i);
+	
+}
+
+extern uint64_t calibrate_get_dtime(void) {
+   	uint64_t start = get_dtime();
+	
+	sleep(1);
+		
+	return(get_dtime() - start);
+}
+
+extern uint64_t calibrate(void) {
+	uint64_t cycleTime = calibrate_get_dtime_cycles();
+	uint64_t elapsedTime, ecdt;
+	double emhz;
+
+	printf("%s: calibrate_get_dtime_cycles(%016llu)\n", __FUNCTION__, cycleTime);
+
+	elapsedTime = calibrate_get_dtime() - cycleTime;
+
+	for(int i = 2; i <= 3; i++) {
+		elapsedTime += calibrate_get_dtime() - cycleTime;
+
+		ecdt = elapsedTime / i;
+		emhz = ecdt / MHz(1);
+		printf("%s: elapsed time: %016llu  ecdt: %016llu  estMHz: %010.4f\n", __FUNCTION__, elapsedTime, ecdt, emhz);
+	}
+	return(ecdt);
+}
+
 
 static inline void _PutBWPixel(int x, int y, unsigned long pixel, SDL_Surface* surface) {
 	int	bpp=surface->format->BytesPerPixel;
@@ -182,7 +232,7 @@ static inline void _PutBWPixel(int x, int y, unsigned long pixel, SDL_Surface* s
 	x=(x>(kScreenWidth-1)?x-kScreenWidth:x);
 	y=(y>(kScreenHeight-1)?y-kScreenHeight:y);
 
-	dst=(unsigned char *)surface->pixels+y*surface->pitch+x*bpp;
+	dst=((unsigned char *)surface->pixels+(y*surface->pitch))+x*bpp;
 	pixel=(pixel?0xffffffff:0x00000000);
 
 	switch(bpp) {
@@ -213,40 +263,29 @@ static inline void PutBWPixel(int x, int y, unsigned long pixel, SDL_Surface* su
 //	py=(y<<1)+y;
 //	py=(y<<2);
 
-	_PutBWPixel(px,py,pixel,surface);
-#if 0
-	_PutBWPixel(px+1,py,pixel,surface);
-	_PutBWPixel(px+2,py,pixel,surface);
-	_PutBWPixel(px+3,py,pixel,surface);
 
-	py++;
-
-	_PutBWPixel(px,py,pixel,surface);
-	_PutBWPixel(px+1,py,pixel,surface);
-	_PutBWPixel(px+2,py,pixel,surface);
-	_PutBWPixel(px+3,py,pixel,surface);
-
-	py++;
-
-	_PutBWPixel(px,py,pixel,surface);
-	_PutBWPixel(px+1,py,pixel,surface);
-	_PutBWPixel(px+2,py,pixel,surface);
-	_PutBWPixel(px+3,py,pixel,surface);
-
-	py++;
-
-	_PutBWPixel(px,py,pixel,surface);
-	_PutBWPixel(px+1,py,pixel,surface);
-	_PutBWPixel(px+2,py,pixel,surface);
-	_PutBWPixel(px+3,py,pixel,surface);
-#endif
+//	for(y=0; y<kScaleFactor; y++) {
+//		for(x=0; x<kScaleFactor; x++) {
+//			_PutBWPixel(px + x, py, pixel, surface);
+			_PutBWPixel(px, py, pixel, surface);
+//		}
+//		py++;
+//	}
 }
 
 static void video_fignition_uart_byte_in_hook(struct avr_irq_t* irq, uint32_t value, void* param) {
-	video_fignition_t*	p=(video_fignition_t*)param;
+	video_fignition_t*	p = (video_fignition_t*)param;
+	uint8_t			*dst = &p->buffer.data[((p->buffer.y << 5) + p->buffer.x) << 3];
 
-	p->buffer.data[(p->buffer.y<<5)+p->buffer.x]=(0xff&value);
-
+	*dst++ = (value & 0x80) ? -1 : 0x00; value <<= 1;
+	*dst++ = (value & 0x80) ? -1 : 0x00; value <<= 1;
+	*dst++ = (value & 0x80) ? -1 : 0x00; value <<= 1;
+	*dst++ = (value & 0x80) ? -1 : 0x00; value <<= 1;
+	*dst++ = (value & 0x80) ? -1 : 0x00; value <<= 1;
+	*dst++ = (value & 0x80) ? -1 : 0x00; value <<= 1;
+	*dst++ = (value & 0x80) ? -1 : 0x00; value <<= 1;
+	*dst = (value & 0x80) ? -1 : 0x00;
+	
 	p->buffer.x++;	
 
 	if(kVideoBuffWidth<=p->buffer.x) {
@@ -259,52 +298,57 @@ static void video_fignition_uart_byte_in_hook(struct avr_irq_t* irq, uint32_t va
 	}
 }
 
-static void video_fignition_sync_in_hook(struct avr_irq_t* irq, uint32_t value, void* param) {
-	video_fignition_t*	p=(video_fignition_t*)param;
-	static	long		syncCache;
 
-	if(00==value)
-		syncCache=0;
-	else
-		syncCache=syncCache<<8|(value&0xff);
-
-	printf("[video_fignition_sync_in_hook] %d %04x\n", value, syncCache);
-
-//	if(0x0b==value) {
-//	if(0x000B0549==(syncCache&0x00ffffff)) {
-//		p->scanLine=0;
-//		p->scanRow=0;
-//		p->refreshNeeded=1;
-//	}
+static inline void blit1bpp(uint64_t * restrict lwdst, uint64_t * restrict lwsrc) {
+	for(int px=0; px<=kVideoPixelWidth; px+=sizeof(*lwdst))
+		*lwdst++ = *lwsrc++;
 }
 
 static void VideoScan(struct video_fignition_t* p) {
 	uint8_t		*pp, pd;
 	uint8_t		px,py;
+	SDL_Surface*	surface = p->surface;
+	int		bpp=surface->format->BytesPerPixel;
+	
+	SDL_LockSurface(surface);
 
-	SDL_LockSurface(p->surface);
+	for(py=0; py<= (kVideoScanlines); py++) {
+		PutBWPixel(-(kVideoPixelLeft-2), py, p->frame&0x01, surface);
+		pp=&p->buffer.data[py << 8];
 
-	for(py=0; py<=kVideoScanlines; py++) {
-		PutBWPixel(-(kVideoPixelLeft-2), py, p->frame&0x01,p->surface);
-
-		pp=&p->buffer.data[py<<5];
-
-		for(px=0; px<=kVideoPixelWidth;) {	
-
-			pd=*pp++;
-			
-			PutBWPixel(px++, py, pd&0x80,p->surface); pd<<=1;
-			PutBWPixel(px++, py, pd&0x80,p->surface); pd<<=1;
-			PutBWPixel(px++, py, pd&0x80,p->surface); pd<<=1;
-			PutBWPixel(px++, py, pd&0x80,p->surface); pd<<=1;
-			PutBWPixel(px++, py, pd&0x80,p->surface); pd<<=1;
-			PutBWPixel(px++, py, pd&0x80,p->surface); pd<<=1;
-			PutBWPixel(px++, py, pd&0x80,p->surface); pd<<=1;
-			PutBWPixel(px++, py, pd&0x80,p->surface); pd<<=1;
+		uint8_t *dst=((unsigned char *)surface->pixels+(py * surface->pitch)) + kVideoPixelLeft * bpp;
+		switch(bpp) {
+			case	1: {
+				blit1bpp((uint64_t *)dst, (uint64_t *)pp);
+			}	break;
+			case	2: {
+				int16_t * restrict wdst = dst;
+				for(px=0; px<=kVideoPixelWidth; px++) {
+					*wdst++ = *(int8_t * restrict)pp++;
+				}
+			}	break;
+			case	3: {
+				for(px=0; px<=kVideoPixelWidth; px++) {
+					pd = *pp++;
+					*dst++ = pd;
+					*dst++ = pd;
+					*dst++ = pd;
+				}
+			} break;
+			case	4: {
+				int32_t * restrict lwdst = (int32_t *)dst;
+				for(px=0; px<=kVideoPixelWidth; px++) {
+					*lwdst++ = *(int8_t * restrict)pp++;
+				}
+			} break;
+			default:
+				for(px=0; px<=kVideoPixelWidth;) {
+					PutBWPixel(px++, py, *pp++, surface);
+				}
 		}
 	}
 
-	SDL_UnlockSurface(p->surface);
+	SDL_UnlockSurface(surface);
 	p->needRefresh=0;
 	p->frame++;
 }
@@ -319,11 +363,6 @@ void video_fignition_connect(video_fignition_t* p, char uart) {
 
 	avr_connect_irq(avr_io_getirq(p->avr, AVR_IOCTL_TIMER_GETIRQ('2'), TIMER_IRQ_OUT_PWM0), p->irq+IRQ_VIDEO_TIMER_PWM0);
 	avr_connect_irq(avr_io_getirq(p->avr, AVR_IOCTL_TIMER_GETIRQ('2'), TIMER_IRQ_OUT_PWM1), p->irq+IRQ_VIDEO_TIMER_PWM1);
-//	avr_connect_irq(avr_io_getirq(p->avr, AVR_IOCTL_TIMER_GETIRQ('2'), TIMER_IRQ_OUT_COMP), p->irq+IRQ_VIDEO_TIMER_COMP);
-//	avr_connect_irq(avr_io_getirq(p->avr, AVR_IOCTL_TIMER_GETIRQ('2'), TIMER_IRQ_OUT_COMP+AVR_TIMER_COMPA), p->irq+IRQ_UART_SYNC_IN);
-//	avr_connect_irq(avr_io_getirq(p->avr, AVR_IOCTL_TIMER_GETIRQ('2'), TIMER_IRQ_OUT_COMP+AVR_TIMER_COMPB), p->irq+IRQ_VIDEO_TIMER_COMPB);
-//	avr_connect_irq(avr_io_getirq(p->avr, AVR_IOCTL_TIMER_GETIRQ('2'), TIMER_IRQ_OUT_COMP+AVR_TIMER_COMPC), p->irq+IRQ_UART_SYNC_IN);
-//	avr_connect_irq(avr_io_getirq(p->avr, AVR_IOCTL_IOPORT_GETIRQ('D'), 3), p->irq+IRQ_UART_SYNC_IN);
 }
 
 static const char* uart_irq_names[IRQ_VIDEO_COUNT]={
@@ -337,11 +376,7 @@ void video_fignition_init(struct avr_t* avr, video_fignition_t* p, SDL_Surface* 
 	p->avr=avr;
 	p->irq=avr_alloc_irq(&avr->irq_pool, 0, IRQ_VIDEO_COUNT, uart_irq_names);
 	avr_irq_register_notify(p->irq+IRQ_VIDEO_UART_BYTE_IN, video_fignition_uart_byte_in_hook, p);
-	avr_irq_register_notify(p->irq+IRQ_VIDEO_TIMER_PWM0, video_fignition_sync_in_hook, p);
-	avr_irq_register_notify(p->irq+IRQ_VIDEO_TIMER_PWM1, video_fignition_sync_in_hook, p);
-	avr_irq_register_notify(p->irq+IRQ_VIDEO_TIMER_COMPB, video_fignition_sync_in_hook, p);
 	
-
 	p->surface=surface;
 	p->buffer.x=0;
 	p->buffer.y=0;
@@ -485,7 +520,9 @@ void SDLInit(int argc, char* argv[], SDL_Surface** surface) {
 	SDL_Init(SDL_INIT_VIDEO);
 
 //	*surface=SDL_SetVideoMode(kScreenWidth, kScreenHeight, 16, SDL_FULLSCREEN|SDL_DOUBLEBUF|SDL_HWSURFACE);
-	*surface=SDL_SetVideoMode(kScreenWidth, kScreenHeight, 16, SDL_SWSURFACE);
+	*surface=SDL_SetVideoMode(kScreenWidth, kScreenHeight, 8, SDL_SWSURFACE);
+//	*surface=SDL_SetVideoMode(kScreenWidth, kScreenHeight, 16, SDL_SWSURFACE);
+//	*surface=SDL_SetVideoMode(kScreenWidth, kScreenHeight, 32, SDL_SWSURFACE);
 	if(*surface==NULL)
 		exit(0);
 
@@ -496,40 +533,73 @@ typedef struct fignition_thread_t {
 	avr_t*			avr;
 	pthread_t		thread;
 	avr_cycle_count_t	run_cycles;
+	avr_cycle_count_t	start_cycle;
+	avr_cycle_count_t	last_cycle;
 	uint64_t		elapsed_dtime;
+	int			aquire_lock;
+	int			lock_granted;
 }fignition_thread_t;
 
 fignition_thread_t fig_thread;
 
-void* avr_run_thread(void* param) {
+void * avr_run_thread(void * param) {
 	fignition_thread_t*	p=(fignition_thread_t*)param;
-	avr_t*			avr=p->avr;
+	avr_t*			avr;
 	uint64_t		prev_dtime, now_dtime;
-	avr_cycle_count_t	run_cycles=p->run_cycles;
-	avr_cycle_count_t	last_cycle=avr->cycle+run_cycles;
+	avr_cycle_count_t	last_cycle;
+
+	avr=p->avr;
 
 #ifdef USE_PTHREAD
-thread_loop:
-#endif
-	prev_dtime=get_dtime();
+threadLoop:
 
-	while(last_cycle>avr->cycle) {
+	if(p->aquire_lock) {
+		p->lock_granted = 1;
+		while(p->aquire_lock) ;
+		p->lock_granted = 0;
+	}
+#endif
+
+	p->start_cycle = avr->cycle;
+	last_cycle = avr->cycle + p->run_cycles;
+
+	prev_dtime = get_dtime();
+	while(last_cycle > avr->cycle) {
 		avr_run(avr);
 	}
+	now_dtime = get_dtime();
 
-	now_dtime=get_dtime();
+	p->last_cycle = avr->cycle;
 
-	if(now_dtime>prev_dtime)
-		p->elapsed_dtime+=now_dtime-prev_dtime;
+	if(now_dtime > prev_dtime)
+		p->elapsed_dtime += now_dtime - prev_dtime;
 	else
-		p->elapsed_dtime+=prev_dtime-now_dtime;
+		p->elapsed_dtime += prev_dtime - now_dtime;
 
 #ifdef USE_PTHREAD
-	last_cycle+=run_cycles;
-	goto thread_loop;
+	goto threadLoop;
 #endif
 
 	return(0);
+}
+
+void * avr_run_no_thread(void * param, uint64_t * start_cycle, uint64_t * last_cycle) {
+	fignition_thread_t*	p=(fignition_thread_t*)param;
+
+#ifdef USE_PTHREAD
+	while(0 != p->lock_granted) ;
+	p->aquire_lock = 1;
+	while(0 == p->lock_granted) ;
+#else
+	avr_run_thread(param);
+#endif
+
+	*start_cycle = p->start_cycle;
+	*last_cycle = p->last_cycle;
+
+#ifdef USE_PTHREAD
+	p->aquire_lock = 0;
+#endif
 }
 
 char kbd_unescape(char scancode) {
@@ -568,16 +638,16 @@ void catch_sig(int sign)
 	exit(0);
 }
 
-extern void avr_core_run_many(avr_t* avr);
+extern void sim_fast_core_init(avr_t* avr);
+extern void avr_fast_core_run_many(avr_t* avr);
 
 int main(int argc, char *argv[])
 {
 	elf_firmware_t	f;
 	const char*	fname="FIGnitionPAL.elf";
 
-	uint32_t	clock;
 	uint16_t	scancode;
-	uint32_t	nextRefresh;
+
 
 	SDL_Surface* surface;
 	SDL_Event event;
@@ -599,12 +669,14 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 	avr_init(avr);
+
+	sim_fast_core_init(avr);
+	
 	avr_load_firmware(avr, &f);
 
 	avr->cycle=0ULL;
-
-	avr->run=avr_core_run_many;
 	avr->sleep=fig_callback_sleep_override;
+	avr->run = avr_fast_core_run_many;
 //	avr->log=LOG_TRACE;
 
 #ifdef USE_AVR_GDB
@@ -622,46 +694,50 @@ int main(int argc, char *argv[])
 	spi_fignition_init(avr, &spi_fignition);
 	kbd_fignition_init(avr, &kbd_fignition);
 
-#ifdef USE_VCD_FILE
-	avr_vcd_init(avr, "gtkwave_output.vcd", &vcd_file, 100000);
-	avr_vcd_add_signal(&vcd_file, avr_io_getirq(avr, AVR_IOCTL_IOPORT_GETIRQ('D'), IOPORT_IRQ_PIN_ALL), 8, "uart");
-//	avr_vcd_add_signal(&vcd_file, avr_io_getirq(avr, AVR_IOCTL_IOPORT_GETIRQ('D'), IOPORT_IRQ_PIN5), 1, "oc2b");
-
-	avr_vcd_start(&vcd_file);
-#endif
-
 	state=cpu_Running;
 
-	fig_thread.avr=avr;
-	fig_thread.run_cycles=kRefreshCycles;
-	fig_thread.elapsed_dtime=0ULL;
+	fig_thread.avr = avr;
+	fig_thread.run_cycles = kRefreshCycles;
+	fig_thread.last_cycle = avr->cycle+1ULL;
+	fig_thread.elapsed_dtime = 0ULL;
+
+	uint64_t cyclesPerSecond = calibrate();
+	double cpuCyclePeriod = 1.0 / cyclesPerSecond;
+	double eavrCyclePeriod = 1.0 / kFrequency;
+	double cycleRatio = cyclesPerSecond / kFrequency;
+	
+	printf("cpuCyclePeriod: %016.14f  eavrCyclePeriod: %016.14f  cycleRatio: %06.1f\n",
+		cpuCyclePeriod, eavrCyclePeriod, cycleRatio);
 
 #ifdef USE_PTHREAD
 	pthread_create(&fig_thread.thread, NULL, avr_run_thread, &fig_thread);
 	printf("main running");
 #endif
-
-	nextRefresh=clock=0;
-
+	
+	int count = 0;
 	while((state!=cpu_Done)&&(state!=cpu_Crashed)) {
-		clock++;
-#ifndef USE_PTHREAD
-		avr_run_thread(&fig_thread);
-#endif
+		count++;
+	
+		uint64_t startCycle;
+		uint64_t lastCycle;
 
-		if((nextRefresh<clock) || video_fignition.needRefresh) {
-			uint64_t eacdt=(1000*fig_thread.elapsed_dtime)/(1+avr->cycle);
-			printf("[avr_run_thread] - cycle: %016llu ecdt: %016llu eacdt: %016llu 1/eacdt: %08.3f\n", 
-				avr->cycle, fig_thread.elapsed_dtime, eacdt, ((float)1/eacdt));
+		avr_run_no_thread(&fig_thread, &startCycle, &lastCycle);
+		
+		uint64_t runCycles = lastCycle - startCycle;
+
+		if(video_fignition.needRefresh) {
+			double eacdt = (double)fig_thread.elapsed_dtime / (double)lastCycle;
+			double eavr = cyclesPerSecond / (runCycles * eacdt);
+			printf("[avr_run_thread] - cycle: %016llu ecdt: %016llu eacdt: %08.4f eavr: %08.4f\n", 
+				avr->cycle, fig_thread.elapsed_dtime, eacdt, eavr);
 
 			VideoScan(&video_fignition);
 			SDL_Flip(surface);
-#ifndef USE_PTHREAD
-			nextRefresh+=30;
-#else
-			nextRefresh=fig_thread.runCycles;
-#endif
+			count = 0;
 		}
+
+		if(count>15)
+			video_fignition.needRefresh = 1;
 
 		SDL_PollEvent(&event);
 		switch (event.type) {
@@ -676,16 +752,10 @@ int main(int argc, char *argv[])
 				scancode=kbd_unescape(scancode);
 				scancode=kbd_figgicode(scancode);
 				break;
-
+			default:
+				state = avr->state;
 		}
-#ifdef	USE_PTHREAD
-		usleep(5);
-#endif
 	}
-
-#ifdef USE_VCD_FILE
-	avr_vcd_close(&vcd_file);
-#endif
 
 	avr_terminate(avr);
 	return(0);
