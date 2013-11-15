@@ -120,7 +120,7 @@
 // 1,2,4,8,16
 #define kUFlashAddrShift 2
 
-#ifdef FAST_CORE_USE_GLOBAL_FLASH_ACCESS
+#if defined(FAST_CORE_USE_GLOBAL_FLASH_ACCESS) || defined(CONFIG_SIMAVR_FAST_CORE_GLOBAL_PIGGYBACKED)
 uint32_t* _uflash = NULL;
 #endif
 
@@ -818,10 +818,26 @@ static inline void _avr_flags_zc16(avr_t* avr, const uint_fast16_t res) {
 }
 
 
+static inline void _avr_flags_zcnvs(avr_t* avr, const uint_fast8_t res, const uint_fast8_t vr) {
+	avr->sreg[S_Z] = res == 0;
+	avr->sreg[S_C] = vr & 1;
+	avr->sreg[S_N] = (res >> 7) & 1;
+	avr->sreg[S_V] = avr->sreg[S_N] ^ avr->sreg[S_C];
+	avr->sreg[S_S] = avr->sreg[S_N] ^ avr->sreg[S_V];
+}
+
 static inline void _avr_flags_zcn0vs(avr_t* avr, const uint_fast8_t res, const uint_fast8_t vr) {
 	avr->sreg[S_Z] = res == 0;
 	avr->sreg[S_C] = vr & 1;
 	avr->sreg[S_N] = 0;
+	avr->sreg[S_V] = avr->sreg[S_N] ^ avr->sreg[S_C];
+	avr->sreg[S_S] = avr->sreg[S_N] ^ avr->sreg[S_V];
+}
+
+static inline void _avr_flags_zcnvs16(avr_t* avr, const uint_fast16_t res, const uint_fast16_t vr) {
+	avr->sreg[S_Z] = res == 0;
+	avr->sreg[S_C] = vr & 1;
+	avr->sreg[S_N] = (res >> 15) & 1;
 	avr->sreg[S_V] = avr->sreg[S_N] ^ avr->sreg[S_C];
 	avr->sreg[S_S] = avr->sreg[S_N] ^ avr->sreg[S_V];
 }
@@ -1056,7 +1072,7 @@ static inline void uFlashWrite(avr_t* avr, avr_flashaddr_t addr, uint_fast32_t d
 	addr <<= kUFlashAddrShift;
 #endif
 
-#ifdef FAST_CORE_USE_GLOBAL_FLASH_ACCESS
+#if defined(FAST_CORE_USE_GLOBAL_FLASH_ACCESS) || defined(CONFIG_SIMAVR_FAST_CORE_GLOBAL_PIGGYBACKED)
 	_uflash[addr] = data;
 #else
 #ifndef CONFIG_SIMAVR_FAST_CORE_PIGGYBACKED
@@ -1080,14 +1096,14 @@ static inline void uFlashWriteB(avr_t* avr, avr_flashaddr_t addr, uint_fast32_t 
 	addr <<= kUFlashAddrShift;
 #endif
 
-#ifdef FAST_CORE_USE_GLOBAL_FLASH_ACCESS
+#if defined(FAST_CORE_USE_GLOBAL_FLASH_ACCESS) || defined(CONFIG_SIMAVR_FAST_CORE_GLOBAL_PIGGYBACKED)
 	((&_uflash)[1])[addr] = data;
 #else
 #ifndef CONFIG_SIMAVR_FAST_CORE_PIGGYBACKED
 	((&avr->uflash)[1])[addr] = data;
 #else
 	uint32_t	*uflash = ((uint32_t*)&((uint8_t *)avr->flash)[avr->flashend + 1]);
-	((&uflash)[1])[addr] = data;
+	(&uflash[1])[addr] = data;
 #endif
 #endif
 }
@@ -1104,7 +1120,7 @@ extern inline uint_fast32_t uFlashRead(avr_t* avr, avr_flashaddr_t addr) {
 	addr <<= kUFlashAddrShift;
 #endif
 
-#ifdef FAST_CORE_USE_GLOBAL_FLASH_ACCESS
+#if defined(FAST_CORE_USE_GLOBAL_FLASH_ACCESS) || defined(CONFIG_SIMAVR_FAST_CORE_GLOBAL_PIGGYBACKED)
 	return(_uflash[addr]);
 #else
 #ifndef CONFIG_SIMAVR_FAST_CORE_PIGGYBACKED
@@ -1128,14 +1144,14 @@ extern inline uint_fast32_t uFlashReadB(avr_t* avr, avr_flashaddr_t addr) {
 	addr <<= kUFlashAddrShift;
 #endif
 
-#ifdef FAST_CORE_USE_GLOBAL_FLASH_ACCESS
+#if defined(FAST_CORE_USE_GLOBAL_FLASH_ACCESS) || defined(CONFIG_SIMAVR_FAST_CORE_GLOBAL_PIGGYBACKED)
 	return(((&_uflash)[1])[addr]);
 #else
 #ifndef CONFIG_SIMAVR_FAST_CORE_PIGGYBACKED
 	return(((&avr->uflash)[1])[addr]);
 #else
 	uint32_t	*uflash = ((uint32_t*)&((uint8_t *)avr->flash)[avr->flashend + 1]);
-	return(((&uflash)[1])[addr]);
+	return((&uflash[1])[addr]);
 #endif
 #endif
 }
@@ -2763,7 +2779,7 @@ UINST(ijmp) {
 
 	TRACE_JUMP();
 
-	UINST_NEXT_JMP_PC_CYCLES(z, 3);
+	UINST_NEXT_JMP_PC_CYCLES(z, 2);
 }
 INST(ijmp)
 
@@ -3427,7 +3443,7 @@ UINSTd5(lsr_ror) {
 	NO_RMW(_avr_set_r16le(avr, d, res));
 	RMW(_avr_rmw_write16le(pvd, res));
 
-	_avr_flags_zcn0vs16(avr, res, vd);
+	_avr_flags_zcnvs16(avr, res, vd);
 
 	SREG();
 	
@@ -3491,7 +3507,6 @@ UINSTd16r16(muls) {
 	_avr_flags_zc16(avr, res);
 
 	SREG();
-	
 	UINST_NEXT_PC_CYCLES(2, 2);
 }
 INSTd16r16(muls)
@@ -3805,7 +3820,7 @@ UINSTd5(ror) {
 	NO_RMW(_avr_set_r(avr, d, res));
 	RMW(_avr_set_rmw(pvd, res));
 
-	_avr_flags_zcn0vs(avr, res, vd);
+	_avr_flags_zcnvs(avr, res, vd);
 
 	SREG();
 	
@@ -5074,11 +5089,15 @@ void sim_fast_core_init(avr_t* avr) {
 	/* yes... we are using twice the space we need...  tradeoff to gain a
 		few extra cycles. */
 	uint32_t uflashsize = flashsize << kUFlashSizeShift; // 4,8,16,32,64
-#ifndef FAST_CORE_USE_GLOBAL_FLASH_ACCESS
+#if !defined(FAST_CORE_USE_GLOBAL_FLASH_ACCESS)
 	avr->flash = realloc(avr->flash, flashsize + uflashsize);
 	assert(0 != avr->flash);
 	
 	memset(&avr->flash[flashsize], 0, uflashsize);
+	
+#ifdef CONFIG_SIMAVR_FAST_CORE_GLOBAL_PIGGYBACKED
+	_uflash = ((uint32_t*)&((uint8_t *)avr->flash)[avr->flashend + 1]);
+#endif
 #else
 	_uflash = malloc(uflashsize);
 	memset(_uflash, 0, uflashsize);

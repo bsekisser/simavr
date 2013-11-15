@@ -85,7 +85,7 @@ int donttrace = 0;
 	printf("\n");\
 }
 #else
-#if 1
+#if 0
 #define T(w) w
 #define REG_TOUCH(a, r)
 #define STATE(_f, args...) { \

@@ -32,10 +32,14 @@
 
 #include "sim_core_decl.h"
 
+void avr_fast_core_run_many(avr_t* avr);
+void sim_fast_core_init(avr_t* avr);
+
 void display_usage(char * app)
 {
-	printf("Usage: %s [-t] [-g] [-v] [-m <device>] [-f <frequency>] firmware\n", app);
-	printf("       -t: Run full scale decoder trace\n"
+	printf("Usage: %s [-fast-core] [-t] [-g] [-v] [-m <device>] [-f <frequency>] firmware\n", app);
+	printf("       -fast-core: Run using fast core\n"
+		   "       -t: Run full scale decoder trace\n"
 		   "       -g: Listen for gdb connection on port 1234\n"
 		   "       -ff: Load next .hex file as flash\n"
 		   "       -ee: Load next .hex file as eeprom\n"
@@ -66,6 +70,7 @@ int main(int argc, char *argv[])
 {
 	elf_firmware_t f = {{0}};
 	long f_cpu = 0;
+	int fast_core = 0;
 	int trace = 0;
 	int gdb = 0;
 	int log = 1;
@@ -80,6 +85,8 @@ int main(int argc, char *argv[])
 	for (int pi = 1; pi < argc; pi++) {
 		if (!strcmp(argv[pi], "-h") || !strcmp(argv[pi], "-help")) {
 			display_usage(basename(argv[0]));
+		} else if (!strcmp(argv[pi], "-fast-core")) {
+			fast_core++;
 		} else if (!strcmp(argv[pi], "-m") || !strcmp(argv[pi], "-mcu")) {
 			if (pi < argc-1)
 				strcpy(name, argv[++pi]);
@@ -154,6 +161,10 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 	avr_init(avr);
+	if(fast_core) {
+		sim_fast_core_init(avr);
+		avr->run = avr_fast_core_run_many;
+	}
 	avr_load_firmware(avr, &f);
 	if (f.flashbase) {
 		printf("Attempted to load a bootloader at %04x\n", f.flashbase);
