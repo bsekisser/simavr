@@ -1,30 +1,3 @@
-#ifndef CONFIG_SIMAVR_FAST_CORE
-/* PROJECT_LOCAL_FAST_CORE
-	may be set if using fast core in locally in project...  be sure to check 
-	options below. */
-#define PROJECT_LOCAL_FAST_CORE
-#endif
-
-
-#ifdef PROJECT_LOCAL_FAST_CORE
-/* if using the core compiled in the project, set these as needed. */
-/* FAST_CORE_USE_GLOBAL_FLASH_ACCESS
-	may be set if using in project (not in simavr library)... uses global 
-	for uflash access */
-#define FAST_CORE_USE_GLOBAL_FLASH_ACCESS
-#ifndef FAST_CORE_USE_GLOBAL_FLASH_ACCESS
-/* CONFIG_SIMAVR_FAST_CORE_PIGGYBACKED
-	piggybacking, if not using global access has the benefit of letting simavr do
-	our cleanup...  however may likely incurr a speed penalty, but necessary
-	if not using global access...  at this time adding members to avr_t
-	causes memory errors...  I have not at this time been able to track down
-	the culprit. */
-#define CONFIG_SIMAVR_FAST_CORE_PIGGYBACKED
-#endif
-#endif
-
-#if defined(CONFIG_SIMAVR_FAST_CORE) || defined(PROJECT_LOCAL_FAST_CORE)
-
 #include <stdio.h>	// printf
 #include <ctype.h>	// toupper
 #include <stdlib.h>	// abort
@@ -39,11 +12,10 @@
 #include "avr_flash.h"
 #include "avr_watchdog.h"
 
+/* FAST_CORE_USE_GLOBAL_FLASH_ACCESS
+	uses global for uflash access */
 /* FAST_CORE_COMBINING
 	common instruction sequences are combined as well as allowing 16 bit access tricks. */
-/* FAST_CORE_FAST_INTERRUPTS
-	slight changes in interrupt handling behavior.  moves some operations out of main loop
-	and lets the instruction flag pertinent changes in core operation. */
 /* FAST_CORE_COMMON_DATA
 	puts avr->data local data for multiple register references */
 /* FAST_CORE_BRANCH_HINTS
@@ -61,13 +33,24 @@
 	for processors with fast multiply, helps reduce branches in comparisons 
 	some processors may have specialized instructions making this slower */
 
+#define FAST_CORE_USE_GLOBAL_FLASH_ACCESS
 #define FAST_CORE_COMBINING
-#define FAST_CORE_FAST_INTERRUPTS
 #define FAST_CORE_COMMON_DATA
 #define FAST_CORE_BRANCH_HINTS
 #define FAST_CORE_SKIP_SHIFT
 #define FAST_CORE_READ_MODIFY_WRITE
 #define FAST_CORE_USE_BRANCHLESS_WITH_MULTIPLY
+
+/* FAST_CORE_FAST_INTERRUPTS
+	slight changes in interrupt handling behavior.  moves some operations out of main loop
+	and lets the instruction flag pertinent changes during instruction operation. */
+/* FAST_CORE_IO_SERVICE_TIMERS_AND_INTERRUPTS
+	pre-services timers and interrupts during io access...  has issues...  likely to be removed...
+	reality is interrupt could be triggered and set interrupt pc before current pc is updated
+	for current instruction thus leaving core in inconsistent state. */
+
+//#define FAST_CORE_FAST_INTERRUPTS
+//#define FAST_CORE_IO_SERVICE_TIMERS_AND_INTERRUPTS
 
 #ifdef FAST_CORE_SKIP_SHIFT
 /* FAST_CORE_32_SKIP_SHIFT
@@ -120,7 +103,7 @@
 // 1,2,4,8,16
 #define kUFlashAddrShift 2
 
-#if defined(FAST_CORE_USE_GLOBAL_FLASH_ACCESS) || defined(CONFIG_SIMAVR_FAST_CORE_GLOBAL_PIGGYBACKED)
+#ifdef FAST_CORE_USE_GLOBAL_FLASH_ACCESS
 uint32_t* _uflash = NULL;
 #endif
 
@@ -537,7 +520,7 @@ extern inline uint32_t uFlashRead(avr_t* avr, avr_flashaddr_t addr);
 #endif
 
 static inline void SEI(avr_t * avr) {
-	if(!avr->i_shadow)
+//	if(!avr->i_shadow)
 		avr->interrupts.pending_wait++;
 	avr->i_shadow = avr->sreg[S_I];
 }
@@ -547,7 +530,7 @@ static inline void CLI(avr_t * avr) {
 	avr->i_shadow = avr->sreg[S_I];
 }
 
-#if 0
+#ifndef FAST_CORE_IO_SERVICE_TIMERS_AND_INTERRUPTS
 #define avr_service_timers_and_interrupts(avr, count) *count = 0
 #else
 static void avr_service_timers_and_interrupts(avr_t * avr, int_fast32_t * count) {
@@ -578,6 +561,7 @@ static void _avr_reg_io_write(avr_t * avr, int_fast32_t * count, uint_fast16_t a
 	REG_TOUCH(avr, addr);
 
 	if (addr == R_SREG) {
+		_avr_data_write(avr, addr, v);
 		// unsplit the SREG
 		SET_SREG_FROM(avr, v);
 		*count = 0;
@@ -589,7 +573,7 @@ static void _avr_reg_io_write(avr_t * avr, int_fast32_t * count, uint_fast16_t a
 		}
 #endif
 		SREG();
-//		_avr_data_write(avr, addr, v);
+		return;
 	} else if ((addr == R_SPL) || (addr == R_SPH)) {
 		_avr_data_write(avr, addr, v);
 		return;
@@ -1072,15 +1056,11 @@ static inline void uFlashWrite(avr_t* avr, avr_flashaddr_t addr, uint_fast32_t d
 	addr <<= kUFlashAddrShift;
 #endif
 
-#if defined(FAST_CORE_USE_GLOBAL_FLASH_ACCESS) || defined(CONFIG_SIMAVR_FAST_CORE_GLOBAL_PIGGYBACKED)
+#ifdef FAST_CORE_USE_GLOBAL_FLASH_ACCESS
 	_uflash[addr] = data;
-#else
-#ifndef CONFIG_SIMAVR_FAST_CORE_PIGGYBACKED
-	avr->uflash[addr] = data;
 #else
 	uint32_t	*uflash = ((uint32_t*)&((uint8_t *)avr->flash)[avr->flashend + 1]);
 	uflash[addr] = data;
-#endif
 #endif
 }
 
@@ -1096,15 +1076,11 @@ static inline void uFlashWriteB(avr_t* avr, avr_flashaddr_t addr, uint_fast32_t 
 	addr <<= kUFlashAddrShift;
 #endif
 
-#if defined(FAST_CORE_USE_GLOBAL_FLASH_ACCESS) || defined(CONFIG_SIMAVR_FAST_CORE_GLOBAL_PIGGYBACKED)
+#ifdef FAST_CORE_USE_GLOBAL_FLASH_ACCESS
 	((&_uflash)[1])[addr] = data;
-#else
-#ifndef CONFIG_SIMAVR_FAST_CORE_PIGGYBACKED
-	((&avr->uflash)[1])[addr] = data;
 #else
 	uint32_t	*uflash = ((uint32_t*)&((uint8_t *)avr->flash)[avr->flashend + 1]);
 	(&uflash[1])[addr] = data;
-#endif
 #endif
 }
 
@@ -1120,15 +1096,11 @@ extern inline uint_fast32_t uFlashRead(avr_t* avr, avr_flashaddr_t addr) {
 	addr <<= kUFlashAddrShift;
 #endif
 
-#if defined(FAST_CORE_USE_GLOBAL_FLASH_ACCESS) || defined(CONFIG_SIMAVR_FAST_CORE_GLOBAL_PIGGYBACKED)
+#ifdef FAST_CORE_USE_GLOBAL_FLASH_ACCESS
 	return(_uflash[addr]);
-#else
-#ifndef CONFIG_SIMAVR_FAST_CORE_PIGGYBACKED
-	return(avr->uflash[addr]);
 #else
 	uint32_t	*uflash = ((uint32_t*)&((uint8_t *)avr->flash)[avr->flashend + 1]);
 	return(uflash[addr]);
-#endif
 #endif
 }
 
@@ -1144,15 +1116,11 @@ extern inline uint_fast32_t uFlashReadB(avr_t* avr, avr_flashaddr_t addr) {
 	addr <<= kUFlashAddrShift;
 #endif
 
-#if defined(FAST_CORE_USE_GLOBAL_FLASH_ACCESS) || defined(CONFIG_SIMAVR_FAST_CORE_GLOBAL_PIGGYBACKED)
+#ifdef FAST_CORE_USE_GLOBAL_FLASH_ACCESS
 	return(((&_uflash)[1])[addr]);
-#else
-#ifndef CONFIG_SIMAVR_FAST_CORE_PIGGYBACKED
-	return(((&avr->uflash)[1])[addr]);
 #else
 	uint32_t	*uflash = ((uint32_t*)&((uint8_t *)avr->flash)[avr->flashend + 1]);
 	return((&uflash[1])[addr]);
-#endif
 #endif
 }
 
@@ -5054,9 +5022,10 @@ void avr_fast_core_run_many(avr_t* avr) {
 			while(0 < _avr_fast_core_run_one(avr, &count))
 				;
 #ifndef FAST_CORE_FAST_INTERRUPTS
-			if (avr->sreg[S_I] && !avr->i_shadow)
+			if (avr->sreg[S_I] && !avr->i_shadow) {
 				avr->interrupts.pending_wait++;
-			avr->i_shadow = avr->sreg[S_I];
+				goto interrupts_enabled;
+			}
 #endif
 			avr_cycle_timer_process(avr);
 		} else if(unlikely(cpu_Sleeping == avr->state)) {
@@ -5071,6 +5040,7 @@ void avr_fast_core_run_many(avr_t* avr) {
 			while(0 < _avr_fast_core_run_one(avr, &count))
 				;
 #ifndef FAST_CORE_FAST_INTERRUPTS
+interrupts_enabled:
 			avr->i_shadow = avr->sreg[S_I];
 #endif
 			avr_cycle_timer_process(avr);
@@ -5089,19 +5059,14 @@ void sim_fast_core_init(avr_t* avr) {
 	/* yes... we are using twice the space we need...  tradeoff to gain a
 		few extra cycles. */
 	uint32_t uflashsize = flashsize << kUFlashSizeShift; // 4,8,16,32,64
-#if !defined(FAST_CORE_USE_GLOBAL_FLASH_ACCESS)
+
 	avr->flash = realloc(avr->flash, flashsize + uflashsize);
 	assert(0 != avr->flash);
 	
 	memset(&avr->flash[flashsize], 0, uflashsize);
 	
-#ifdef CONFIG_SIMAVR_FAST_CORE_GLOBAL_PIGGYBACKED
+#ifdef FAST_CORE_USE_GLOBAL_FLASH_ACCESS
 	_uflash = ((uint32_t*)&((uint8_t *)avr->flash)[avr->flashend + 1]);
-#endif
-#else
-	_uflash = malloc(uflashsize);
-	memset(_uflash, 0, uflashsize);
 #endif
 }
 
-#endif
