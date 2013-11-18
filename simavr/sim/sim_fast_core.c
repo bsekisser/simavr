@@ -26,6 +26,9 @@
 	use shifts vs comparisons and branching where shifting is less expensive
 	then branching. Some processors have specialized instructions to handle
 	such cases and may be faster disabled. */
+/* FAST_CORE_32_SKIP_SHIFT
+	long instruction skip is not as strait forward as a simple skip...
+	overall results may vary. */
 /* FAST_CORE_READ_MODIFY_WRITE
 	reduces redundancy inherent in register access...  and cuts back on 
 	some unecessary checks. */
@@ -38,6 +41,7 @@
 #define FAST_CORE_COMMON_DATA
 #define FAST_CORE_BRANCH_HINTS
 #define FAST_CORE_SKIP_SHIFT
+#define FAST_CORE_32_SKIP_SHIFT
 #define FAST_CORE_READ_MODIFY_WRITE
 #define FAST_CORE_USE_BRANCHLESS_WITH_MULTIPLY
 
@@ -51,12 +55,6 @@
 
 //#define FAST_CORE_FAST_INTERRUPTS
 //#define FAST_CORE_IO_SERVICE_TIMERS_AND_INTERRUPTS
-
-#ifdef FAST_CORE_SKIP_SHIFT
-/* FAST_CORE_32_SKIP_SHIFT
-	you may try this but may use more cycles */
-//#define FAST_CORE_32_SKIP_SHIFT
-#endif
 
 /* FAST_CORE_DECODE_TRAP
 	specific trap to catch missing instruction handlers */
@@ -2641,17 +2639,18 @@ INSTd5r5(16_cpse)
 
 UINSTd5r5(32_cpse) {
 	UINST_GET_VD_VR();
-	uint_fast8_t skip = vd == vr;
-
+	uint_fast8_t skip = (vd == vr);
+	
 	STATE("cpse %s[%02x], %s[%02x]\t; Will%s skip\n", avr_regname(d), vd, avr_regname(r), vr, skip ? "":" not");
 
 #ifdef FAST_CORE_32_SKIP_SHIFT
+	int skip_count = skip ? 3 : 1;
+	UINST_NEXT_PC_CYCLES(skip_count << 1, skip_count);
+#else
 	if (skip) {
 		UINST_NEXT_PC_CYCLES(6, 3);
 	}
 	UINST_NEXT_PC_CYCLES(2, 1);
-#else
-	UINST_NEXT_PC_CYCLES(2 + (2 << skip), 1 + (1 << skip));
 #endif
 }
 INSTd5r5(32_cpse)
@@ -3862,12 +3861,13 @@ UINSTa5m8(32_sbic) {
 #endif
 
 #ifdef FAST_CORE_32_SKIP_SHIFT
+	int skip_count = skip ? 3 : 1;
+	UINST_NEXT_PC_CYCLES(skip_count << 1, skip_count);
+#else
 	if (skip) {
 		UINST_NEXT_PC_CYCLES(6, 3);
 	}
 	UINST_NEXT_PC_CYCLES(2, 1);
-#else
-	UINST_NEXT_PC_CYCLES(2 + (2 << skip), 1 + (1 << skip));
 #endif
 }
 INSTa5m8(32_sbic)
@@ -3906,12 +3906,13 @@ UINSTa5m8(32_sbis) {
 #endif
 
 #ifdef FAST_CORE_32_SKIP_SHIFT
+	int skip_count = skip ? 3 : 1;
+	UINST_NEXT_PC_CYCLES(skip_count << 1, skip_count);
+#else
 	if (skip) {
 		UINST_NEXT_PC_CYCLES(6, 3);
 	}
 	UINST_NEXT_PC_CYCLES(2, 1);
-#else
-	UINST_NEXT_PC_CYCLES(2 + (2 << skip), 1 + (1 << skip));
 #endif
 }
 INSTa5m8(32_sbis)
@@ -3995,12 +3996,13 @@ UINSTd5m8(32_sbrc) {
 #endif
 
 #ifdef FAST_CORE_32_SKIP_SHIFT
+	int skip_count = skip ? 3 : 1;
+	UINST_NEXT_PC_CYCLES(skip_count << 1, skip_count);
+#else
 	if (skip) {
 		UINST_NEXT_PC_CYCLES(6, 3);
 	}
 	UINST_NEXT_PC_CYCLES(2, 1);
-#else
-	UINST_NEXT_PC_CYCLES(2 + (2 << skip), 1 + (1 << skip));
 #endif
 }
 INSTd5m8(32_sbrc)
@@ -4039,12 +4041,13 @@ UINSTd5m8(32_sbrs) {
 #endif
 
 #ifdef FAST_CORE_32_SKIP_SHIFT
+	int skip_count = skip ? 3 : 1;
+	UINST_NEXT_PC_CYCLES(skip_count << 1, skip_count);
+#else
 	if (skip) {
 		UINST_NEXT_PC_CYCLES(6, 3);
 	}
 	UINST_NEXT_PC_CYCLES(2, 1);
-#else
-	UINST_NEXT_PC_CYCLES(2 + (2 << skip), 1 + (1 << skip));
 #endif
 }
 INSTd5m8(32_sbrs)
