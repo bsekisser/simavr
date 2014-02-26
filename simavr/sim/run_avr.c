@@ -36,7 +36,7 @@
 
 void display_usage(char * app)
 {
-	printf("Usage: %s [-t] [-g] [-v] [-m <device>] [-f <frequency>] firmware\n", app);
+	printf("Usage: %s [-t] [-g] [-v] [-m <device>] [-f <frequency>] [-fast-core] firmware\n", app);
 	printf("       -t: Run full scale decoder trace\n"
 		   "       -g: Listen for gdb connection on port 1234\n"
 		   "       -ff: Load next .hex file as flash\n"

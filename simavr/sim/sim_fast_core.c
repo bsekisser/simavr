@@ -135,11 +135,20 @@ static const int _AVR_FAST_CORE_DECODE_TRAP = 0;
 	adds more verbose detail to stack operations */
 
 //#define AVR_CORE_FAST_CORE_DIFF_TRACE
-//#define AVR_FAST_CORE_LOCAL_TRACE
-#ifndef AVR_CORE_FAST_CORE_DIFF_TRACE
-//#define AVR_CORE_FAST_CORE_BUGS
+#ifdef AVR_CORE_FAST_CORE_DIFF_TRACE
+#define AVR_CORE_FAST_CORE_BUGS
+#define AVR_CORE_FAST_CORE_DIFF_TRACE
 //#define AVR_FAST_CORE_ITRACE
+#define AVR_FAST_CORE_LOCAL_TRACE
+#define AVR_FAST_CORE_STACK_TRACE
+#else
+//#define AVR_FAST_CORE_LOCAL_TRACE
+#ifdef AVR_FAST_CORE_LOCAL_TRACE
+//#define AVR_CORE_FAST_CORE_BUGS
+//#define AVR_CORE_FAST_CORE_DIFF_TRACE
+#define AVR_FAST_CORE_ITRACE
 //#define AVR_FAST_CORE_STACK_TRACE
+#endif
 #endif
 #else
 /* do not touch these here...  set above. */
