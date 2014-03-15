@@ -84,6 +84,23 @@ int donttrace = 0;
 		printf("%c", avr->sreg[_sbi] ? toupper(_sreg_bit_name[_sbi]) : '.');\
 	printf("\n");\
 }
+
+void crash(avr_t* avr)
+{
+	DUMP_REG();
+	printf("*** CYCLE %" PRI_avr_cycle_count "PC %04x\n", avr->cycle, avr->pc);
+
+	for (int i = OLD_PC_SIZE-1; i > 0; i--) {
+		int pci = (avr->trace_data->old_pci + i) & 0xf;
+		printf(FONT_RED "*** %04x: %-25s RESET -%d; sp %04x\n" FONT_DEFAULT,
+				avr->trace_data->old[pci].pc, avr->trace_data->codeline ? avr->trace_data->codeline[avr->trace_data->old[pci].pc>>1]->symbol : "unknown", OLD_PC_SIZE-i, avr->trace_data->old[pci].sp);
+	}
+
+	printf("Stack Ptr %04x/%04x = %d \n", _avr_sp_get(avr), avr->ramend, avr->ramend - _avr_sp_get(avr));
+	DUMP_STACK();
+
+	avr_sadly_crashed(avr, 0);
+}
 #else
 #if 1
 #define T(w) w
@@ -102,6 +119,11 @@ int donttrace = 0;
 #define REG_TOUCH(a, r)
 #define STATE(_f, args...)
 #define SREG()
+
+void crash(avr_t* avr)
+{
+	avr_sadly_crashed(avr, 0);
+}
 #endif
 #endif
 
@@ -110,12 +132,12 @@ void avr_core_watch_write(avr_t *avr, uint16_t addr, uint8_t v)
 	if (addr > avr->ramend) {
 		AVR_LOG(avr, LOG_ERROR, "CORE: *** Invalid write address PC=%04x SP=%04x O=%04x Address %04x=%02x out of ram\n",
 				avr->pc, _avr_sp_get(avr), avr->flash[avr->pc + 1] | (avr->flash[avr->pc]<<8), addr, v);
-		CRASH();
+		crash(avr);
 	}
 	if (addr < 32) {
 		AVR_LOG(avr, LOG_ERROR, "CORE: *** Invalid write address PC=%04x SP=%04x O=%04x Address %04x=%02x low registers\n",
 				avr->pc, _avr_sp_get(avr), avr->flash[avr->pc + 1] | (avr->flash[avr->pc]<<8), addr, v);
-		CRASH();
+		crash(avr);
 	}
 #if AVR_STACK_WATCH
 	/*
@@ -140,7 +162,7 @@ uint8_t avr_core_watch_read(avr_t *avr, uint16_t addr)
 	if (addr > avr->ramend) {
 		AVR_LOG(avr, LOG_ERROR, FONT_RED "CORE: *** Invalid read address PC=%04x SP=%04x O=%04x Address %04x out of ram (%04x)\n" FONT_DEFAULT,
 				avr->pc, _avr_sp_get(avr), avr->flash[avr->pc + 1] | (avr->flash[avr->pc]<<8), addr, avr->ramend);
-		CRASH();
+		crash(avr);
 	}
 
 	if (avr->gdb) {
@@ -234,7 +256,7 @@ static inline uint8_t _avr_get_ram(avr_t * avr, uint16_t addr)
 }
 
 /*
- * Stack push accessors. Push/pop 8 and 16 bits
+ * Stack push accessors.
  */
 static inline void _avr_push8(avr_t * avr, uint16_t v)
 {
@@ -251,16 +273,26 @@ static inline uint8_t _avr_pop8(avr_t * avr)
 	return res;
 }
 
-inline void _avr_push16(avr_t * avr, uint16_t v)
+int _avr_push_addr(avr_t * avr, avr_flashaddr_t addr)
 {
-	_avr_push8(avr, v);
-	_avr_push8(avr, v >> 8);
+	uint16_t sp = _avr_sp_get(avr);
+	addr >>= 1;
+	for (int i = 0; i < avr->address_size; i++, addr >>= 8, sp--) {
+		_avr_set_ram(avr, sp, addr);	
+	}
+	_avr_sp_set(avr, sp);
+	return avr->address_size;
 }
 
-static inline uint16_t _avr_pop16(avr_t * avr)
+avr_flashaddr_t _avr_pop_addr(avr_t * avr)
 {
-	uint16_t res = _avr_pop8(avr) << 8;
-	res |= _avr_pop8(avr);
+	uint16_t sp = _avr_sp_get(avr) + 1;
+	avr_flashaddr_t res = 0;
+	for (int i = 0; i < avr->address_size; i++, sp++) {
+		res = (res << 8) | _avr_get_ram(avr, sp);
+	}
+	res <<= 1;
+	_avr_sp_set(avr, sp -1);
 	return res;
 }
 
@@ -472,13 +504,22 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 	/*
 	 * this traces spurious reset or bad jumps
 	 */
-	if ((avr->pc == 0 && avr->cycle > 0) || avr->pc >= avr->codeend) {
+	if ((avr->pc == 0 && avr->cycle > 0) || avr->pc >= avr->codeend || _avr_sp_get(avr) > avr->ramend) {
 		avr->trace = 1;
 		STATE("RESET\n");
-		CRASH();
+		crash(avr);
 	}
 	avr->trace_data->touched[0] = avr->trace_data->touched[1] = avr->trace_data->touched[2] = 0;
 #endif
+
+	/* Ensure we don't crash simavr due to a bad instruction reading past
+	 * the end of the flash.
+	 */
+	if (unlikely(avr->pc >= avr->flashend)) {
+		STATE("CRASH\n");
+		crash(avr);
+		return 0;
+	}
 
 	uint32_t		opcode = (avr->flash[avr->pc + 1] << 8) | avr->flash[avr->pc];
 	avr_flashaddr_t	new_pc = avr->pc + 2;	// future "default" pc
@@ -867,20 +908,18 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 					if (e)
 						z |= avr->data[avr->eind] << 16;
 					STATE("%si%s Z[%04x]\n", e?"e":"", p?"call":"jmp", z << 1);
-					if (p) {
-						cycle++;
-						_avr_push16(avr, new_pc >> 1);
-					}
+					if (p)
+						cycle += _avr_push_addr(avr, new_pc) - 1;
 					new_pc = z << 1;
 					cycle++;
 					TRACE_JUMP();
 				}	break;
 				case 0x9518: 	// RETI
 				case 0x9508: {	// RET
-					new_pc = _avr_pop16(avr) << 1;
+					new_pc = _avr_pop_addr(avr);
+					cycle += 1 + avr->address_size;
 					if (opcode & 0x10)	// reti
 						avr->sreg[S_I] = 1;
-					cycle += 3;
 					STATE("ret%s\n", opcode & 0x10 ? "i" : "");
 					TRACE_JUMP();
 					STACK_FRAME_POP();
@@ -965,10 +1004,11 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							STATE("ld %s, %sX[%04x]%s\n", avr_regname(r), op == 2 ? "--" : "", x, op == 1 ? "++" : "");
 							cycle++; // 2 cycles (1 for tinyavr, except with inc/dec 2)
 							if (op == 2) x--;
-							_avr_set_r(avr, r, _avr_get_ram(avr, x));
+							uint8_t vr = _avr_get_ram(avr, x);
 							if (op == 1) x++;
 							_avr_set_r(avr, R_XH, x >> 8);
 							_avr_set_r(avr, R_XL, x);
+							_avr_set_r(avr, r, vr);
 						}	break;
 						case 0x920c:
 						case 0x920d:
@@ -992,10 +1032,11 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							STATE("ld %s, %sY[%04x]%s\n", avr_regname(r), op == 2 ? "--" : "", y, op == 1 ? "++" : "");
 							cycle++; // 2 cycles, except tinyavr
 							if (op == 2) y--;
-							_avr_set_r(avr, r, _avr_get_ram(avr, y));
+							uint8_t vr = _avr_get_ram(avr, y);
 							if (op == 1) y++;
 							_avr_set_r(avr, R_YH, y >> 8);
 							_avr_set_r(avr, R_YL, y);
+							_avr_set_r(avr, r, vr);
 						}	break;
 						case 0x9209:
 						case 0x920a: {	// ST Store Indirect Data Space Y 1001 001r rrrr 10oo
@@ -1026,10 +1067,11 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							STATE("ld %s, %sZ[%04x]%s\n", avr_regname(r), op == 2 ? "--" : "", z, op == 1 ? "++" : "");
 							cycle++;; // 2 cycles, except tinyavr
 							if (op == 2) z--;
-							_avr_set_r(avr, r, _avr_get_ram(avr, z));
+							uint8_t vr = _avr_get_ram(avr, z);
 							if (op == 1) z++;
 							_avr_set_r(avr, R_ZH, z >> 8);
 							_avr_set_r(avr, R_ZL, z);
+							_avr_set_r(avr, r, vr);
 						}	break;
 						case 0x9201:
 						case 0x9202: {	// ST Store Indirect Data Space Z 1001 001r rrrr 00oo
@@ -1168,9 +1210,8 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							a = (a << 16) | x;
 							STATE("call 0x%06x\n", a);
 							new_pc += 2;
-							_avr_push16(avr, new_pc >> 1);
+							cycle += 1 + _avr_push_addr(avr, new_pc);
 							new_pc = a << 1;
-							cycle += 3;	// 4 cycles; FIXME 5 on devices with 22 bit PC
 							TRACE_JUMP();
 							STACK_FRAME_PUSH();
 						}	break;
@@ -1306,11 +1347,10 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 		case 0xd000: {
 			// RCALL 1100 kkkk kkkk kkkk
 //			int16_t o = ((int16_t)(opcode << 4)) >> 4; // CLANG BUG!
-			int16_t o = ((int16_t)((opcode << 4)&0xffff)) >> 4;
+			int16_t o = ((int16_t)((opcode << 4) & 0xffff)) >> 4;
 			STATE("rcall .%d [%04x]\n", o, new_pc + (o << 1));
-			_avr_push16(avr, new_pc >> 1);
+			cycle += _avr_push_addr(avr, new_pc) - 1;
 			new_pc = new_pc + (o << 1);
-			cycle += 2;
 			// 'rcall .1' is used as a cheap "push 16 bits of room on the stack"
 			if (o != 0) {
 				TRACE_JUMP();

@@ -147,7 +147,8 @@ typedef struct avr_t {
 	uint8_t		fuse[4];
 	avr_io_addr_t	rampz;	// optional, only for ELPM/SPM on >64Kb cores
 	avr_io_addr_t	eind;	// optional, only for EIJMP/EICALL on >64Kb cores
-
+	uint8_t		address_size;	// 2, or 3 for cores >128KB in flash
+	
 	// filled by the ELF data, this allow tracking of invalid jumps
 	uint32_t			codeend;
 
@@ -397,7 +398,7 @@ avr_global_logger_set(
 		avr_logger_p logger);
 /* Gets the current global logger function */
 avr_logger_p
-avr_global_logger_get();
+avr_global_logger_get(void);
 #endif
 
 /*
@@ -425,6 +426,28 @@ avr_pending_sleep_usec(
 
 #include "sim_io.h"
 #include "sim_regbit.h"
+
+#ifdef __GNUC__
+
+# ifndef likely
+#  define likely(x) __builtin_expect(!!(x), 1)
+# endif
+
+# ifndef unlikely
+#  define unlikely(x) __builtin_expect(!!(x), 0)
+# endif
+
+#else /* ! __GNUC__ */
+
+# ifndef likely
+#  define likely(x) x
+# endif
+
+# ifndef unlikely
+#  define unlikely(x) x
+# endif
+
+#endif /* __GNUC__ */
 
 #endif /*__SIM_AVR_H__*/
 

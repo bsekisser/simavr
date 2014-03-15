@@ -38,6 +38,12 @@ static uint16_t _timer_get_ocr(avr_timer_t * p, int compi)
 	return p->io.avr->data[p->comp[compi].r_ocr] |
 		      (p->comp[compi].r_ocrh ? (p->io.avr->data[p->comp[compi].r_ocrh] << 8) : 0);
 }
+static uint16_t _timer_get_comp_ocr(struct avr_t * avr, avr_timer_comp_p comp)
+{
+	int ocrh = comp->r_ocrh;
+	return avr->data[comp->r_ocr] |
+		(ocrh ? (avr->data[ocrh] << 8) : 0);
+}
 static uint16_t _timer_get_tcnt(avr_timer_t * p)
 {
 	return p->io.avr->data[p->r_tcnt] |
@@ -148,6 +154,13 @@ static uint8_t avr_timer_tcnt_read(struct avr_t * avr, avr_io_addr_t addr, void 
 	return avr_core_watch_read(avr, addr);
 }
 
+static void avr_timer_cancel_all_cycle_timers(struct avr_t * avr, avr_timer_t *timer) {
+	avr_cycle_timer_cancel(avr, avr_timer_tov, timer);
+	avr_cycle_timer_cancel(avr, avr_timer_compa, timer);
+	avr_cycle_timer_cancel(avr, avr_timer_compb, timer);
+	avr_cycle_timer_cancel(avr, avr_timer_compc, timer);
+}
+
 static void avr_timer_tcnt_write(struct avr_t * avr, avr_io_addr_t addr, uint8_t v, void * param)
 {
 	avr_timer_t * p = (avr_timer_t *)param;
@@ -164,10 +177,7 @@ static void avr_timer_tcnt_write(struct avr_t * avr, avr_io_addr_t addr, uint8_t
 	// cancel the current timers, recalculate the "base" we should be at, reset the
 	// timer base as it should, and re-schedule the timers using that base.
 	
-	avr_cycle_timer_cancel(avr, avr_timer_tov, p);
-	avr_cycle_timer_cancel(avr, avr_timer_compa, p);
-	avr_cycle_timer_cancel(avr, avr_timer_compb, p);
-	avr_cycle_timer_cancel(avr, avr_timer_compc, p);
+	avr_timer_cancel_all_cycle_timers(avr, p);
 
 	uint64_t cycles = (tcnt * p->tov_cycles) / p->tov_top;
 
@@ -235,10 +245,7 @@ static void avr_timer_reconfigure(avr_timer_t * p)
 	p->comp[AVR_TIMER_COMPC].comp_cycles = 0;
 	p->tov_cycles = 0;
 	
-	avr_cycle_timer_cancel(avr, avr_timer_tov, p);
-	avr_cycle_timer_cancel(avr, avr_timer_compa, p);
-	avr_cycle_timer_cancel(avr, avr_timer_compb, p);
-	avr_cycle_timer_cancel(avr, avr_timer_compc, p);
+	avr_timer_cancel_all_cycle_timers(avr, p);
 
 	long clock = avr->frequency;
 
@@ -283,45 +290,39 @@ static void avr_timer_reconfigure(avr_timer_t * p)
 
 static void avr_timer_write_ocr(struct avr_t * avr, avr_io_addr_t addr, uint8_t v, void * param)
 {
-	avr_timer_t * p = (avr_timer_t *)param;
-	uint16_t oldv[AVR_TIMER_COMP_COUNT];
-	int target = -1;
+	avr_timer_comp_p comp = (avr_timer_comp_p)param;
+	avr_timer_t *timer = comp->timer;
+	uint16_t oldv;
 
 	/* check to see if the OCR values actually changed */
-	for (int oi = 0; oi < AVR_TIMER_COMP_COUNT; oi++)
-		oldv[oi] = _timer_get_ocr(p, oi);
+	oldv = _timer_get_comp_ocr(avr, comp);
 	avr_core_watch_write(avr, addr, v);
-	for (int oi = 0; oi < AVR_TIMER_COMP_COUNT; oi++)
-		if (oldv[oi] != _timer_get_ocr(p, oi)) {
-			target = oi;
-			break;
-		}
 
-	switch (p->mode.kind) {
+	switch (timer->mode.kind) {
 		case avr_timer_wgm_normal:
-			avr_timer_reconfigure(p);
+			avr_timer_reconfigure(timer);
 			break;
 		case avr_timer_wgm_fc_pwm:	// OCR is not used here
-			avr_timer_reconfigure(p);
+			avr_timer_reconfigure(timer);
 			break;
 		case avr_timer_wgm_ctc:
-			avr_timer_reconfigure(p);
+			avr_timer_reconfigure(timer);
 			break;
 		case avr_timer_wgm_pwm:
-			if (p->mode.top != avr_timer_wgm_reg_ocra) {
-				avr_raise_irq(p->io.irq + TIMER_IRQ_OUT_PWM0, _timer_get_ocr(p, AVR_TIMER_COMPA));
-				avr_raise_irq(p->io.irq + TIMER_IRQ_OUT_PWM1, _timer_get_ocr(p, AVR_TIMER_COMPB));
+			if (timer->mode.top != avr_timer_wgm_reg_ocra) {
+				avr_raise_irq(timer->io.irq + TIMER_IRQ_OUT_PWM0, _timer_get_ocr(timer, AVR_TIMER_COMPA));
+				avr_raise_irq(timer->io.irq + TIMER_IRQ_OUT_PWM1, _timer_get_ocr(timer, AVR_TIMER_COMPB));
 			}
 			break;
 		case avr_timer_wgm_fast_pwm:
-			if (target != -1)
-				avr_timer_reconfigure(p);
-			avr_raise_irq(p->io.irq + TIMER_IRQ_OUT_PWM0, _timer_get_ocr(p, AVR_TIMER_COMPA));
-			avr_raise_irq(p->io.irq + TIMER_IRQ_OUT_PWM1, _timer_get_ocr(p, AVR_TIMER_COMPB));
+			if (oldv != _timer_get_comp_ocr(avr, comp))
+				avr_timer_reconfigure(timer);
+			avr_raise_irq(timer->io.irq + TIMER_IRQ_OUT_PWM0, _timer_get_ocr(timer, AVR_TIMER_COMPA));
+			avr_raise_irq(timer->io.irq + TIMER_IRQ_OUT_PWM1, _timer_get_ocr(timer, AVR_TIMER_COMPB));
 			break;
 		default:
-			AVR_LOG(avr, LOG_WARNING, "TIMER: %s-%c mode %d UNSUPPORTED\n", __FUNCTION__, p->name, p->mode.kind);
-			avr_timer_reconfigure(p);
+			AVR_LOG(avr, LOG_WARNING, "TIMER: %s-%c mode %d UNSUPPORTED\n", __FUNCTION__, timer->name, timer->mode.kind);
+			avr_timer_reconfigure(timer);
 			break;
 	}
 }
@@ -401,10 +402,7 @@ static void avr_timer_irq_icp(struct avr_irq_t * irq, uint32_t value, void * par
 static void avr_timer_reset(avr_io_t * port)
 {
 	avr_timer_t * p = (avr_timer_t *)port;
-	avr_cycle_timer_cancel(p->io.avr, avr_timer_tov, p);
-	avr_cycle_timer_cancel(p->io.avr, avr_timer_compa, p);
-	avr_cycle_timer_cancel(p->io.avr, avr_timer_compb, p);
-	avr_cycle_timer_cancel(p->io.avr, avr_timer_compc, p);
+	avr_timer_cancel_all_cycle_timers(p->io.avr, p);
 
 	// check to see if the comparators have a pin output. If they do,
 	// (try) to get the ioport corresponding IRQ and connect them
@@ -478,10 +476,12 @@ void avr_timer_init(avr_t * avr, avr_timer_t * p)
 	 * the trigger.
 	 */
 	for (int compi = 0; compi < AVR_TIMER_COMP_COUNT; compi++) {
+		p->comp[compi].timer = p;
+		
 		avr_register_vector(avr, &p->comp[compi].interrupt);
 
 		if (p->comp[compi].r_ocr) // not all timers have all comparators
-			avr_register_io_write(avr, p->comp[compi].r_ocr, avr_timer_write_ocr, p);
+			avr_register_io_write(avr, p->comp[compi].r_ocr, avr_timer_write_ocr, &p->comp[compi]);
 	}
 	avr_register_io_write(avr, p->r_tcnt, avr_timer_tcnt_write, p);
 	avr_register_io_read(avr, p->r_tcnt, avr_timer_tcnt_read, p);
