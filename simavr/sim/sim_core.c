@@ -162,7 +162,7 @@ uint8_t avr_core_watch_read(avr_t *avr, uint16_t addr)
  * if it's an IO register (> 31) also (try to) call any callback that was
  * registered to track changes to that register.
  */
-static inline void _avr_set_r(avr_t * avr, uint8_t r, uint8_t v)
+static inline void _avr_set_io(avr_t * avr, uint8_t r, uint8_t v)
 {
 	REG_TOUCH(avr, r);
 
@@ -187,6 +187,15 @@ static inline void _avr_set_r(avr_t * avr, uint8_t r, uint8_t v)
 		avr->data[r] = v;
 }
 
+#if 0
+static inline void _avr_set_r(avr_t * avr, uint8_t r, uint8_t v)
+{
+	avr->data[r] = v;
+}
+#else
+#define _avr_set_r(avr, r, v) avr->data[r] = v
+#endif
+
 /*
  * Stack pointer access
  */
@@ -207,15 +216,12 @@ inline void _avr_sp_set(avr_t * avr, uint16_t sp)
 static inline void _avr_set_ram(avr_t * avr, uint16_t addr, uint8_t v)
 {
 	if (addr < 256)
-		_avr_set_r(avr, addr, v);
+		_avr_set_io(avr, addr, v);
 	else
 		avr_core_watch_write(avr, addr, v);
 }
 
-/*
- * Get a value from SRAM.
- */
-static inline uint8_t _avr_get_ram(avr_t * avr, uint16_t addr)
+static inline uint8_t _avr_get_io(avr_t * avr, uint16_t addr)
 {
 	if (addr == R_SREG) {
 		/*
@@ -223,7 +229,6 @@ static inline uint8_t _avr_get_ram(avr_t * avr, uint16_t addr)
 		 * while the core itself uses the "shortcut" array
 		 */
 		READ_SREG_INTO(avr, avr->data[R_SREG]);
-		
 	} else if (addr > 31 && addr < 256) {
 		uint8_t io = AVR_DATA_TO_IO(addr);
 		
@@ -237,7 +242,19 @@ static inline uint8_t _avr_get_ram(avr_t * avr, uint16_t addr)
 				avr_raise_irq(avr->io[io].irq + i, (v >> i) & 1);				
 		}
 	}
+
 	return avr_core_watch_read(avr, addr);
+}
+
+/*
+ * Get a value from SRAM.
+ */
+static inline uint8_t _avr_get_ram(avr_t * avr, uint16_t addr)
+{
+	if (addr < 256)
+		return _avr_get_io(avr, addr);
+	else
+		return avr_core_watch_read(avr, addr);
 }
 
 /*
@@ -866,13 +883,16 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 		}	break;
 
 		case 0x9000: {
+#if 0
 			/* this is an annoying special case, but at least these lines handle all the SREG set/clear opcodes */
 			if ((opcode & 0xff0f) == 0x9408) {
 				get_sreg_bit(opcode);
 				STATE("%s%c\n", opcode & 0x0080 ? "cl" : "se", _sreg_bit_name[b]);
 				avr->sreg[b] = (opcode & 0x0080) == 0;
 				SREG();
-			} else switch (opcode) {
+			} else
+#endif
+			switch (opcode) {
 				case 0x9588: { // SLEEP -- 1001 0101 1000 1000
 					STATE("sleep\n");
 					/* Don't sleep if there are interrupts about to be serviced.
@@ -1231,14 +1251,14 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 								}	break;
 								case 0x9800: {	// CBI -- Clear Bit in I/O Register -- 1001 1000 AAAA Abbb
 									get_io5_b3(opcode);
-									uint8_t res = _avr_get_ram(avr, io) & ~(1 << b);
+									uint8_t res = _avr_get_io(avr, io) & ~(1 << b);
 									STATE("cbi %s[%04x], 0x%02x = %02x\n", avr_regname(io), avr->data[io], 1<<b, res);
-									_avr_set_ram(avr, io, res);
+									_avr_set_io(avr, io, res);
 									cycle++;
 								}	break;
 								case 0x9900: {	// SBIC -- Skip if Bit in I/O Register is Cleared -- 1001 1001 AAAA Abbb
 									get_io5_b3(opcode);
-									uint8_t res = _avr_get_ram(avr, io) & (1 << b);
+									uint8_t res = _avr_get_io(avr, io) & (1 << b);
 									STATE("sbic %s[%04x], 0x%02x\t; Will%s branch\n", avr_regname(io), avr->data[io], 1<<b, !res?"":" not");
 									if (!res) {
 										if (_avr_is_instruction_32_bits(avr, new_pc)) {
@@ -1250,14 +1270,14 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 								}	break;
 								case 0x9a00: {	// SBI -- Set Bit in I/O Register -- 1001 1010 AAAA Abbb
 									get_io5_b3(opcode);
-									uint8_t res = _avr_get_ram(avr, io) | (1 << b);
+									uint8_t res = _avr_get_io(avr, io) | (1 << b);
 									STATE("sbi %s[%04x], 0x%02x = %02x\n", avr_regname(io), avr->data[io], 1<<b, res);
-									_avr_set_ram(avr, io, res);
+									_avr_set_io(avr, io, res);
 									cycle++;
 								}	break;
 								case 0x9b00: {	// SBIS -- Skip if Bit in I/O Register is Set -- 1001 1011 AAAA Abbb
 									get_io5_b3(opcode);
-									uint8_t res = _avr_get_ram(avr, io) & (1 << b);
+									uint8_t res = _avr_get_io(avr, io) & (1 << b);
 									STATE("sbis %s[%04x], 0x%02x\t; Will%s branch\n", avr_regname(io), avr->data[io], 1<<b, res?"":" not");
 									if (res) {
 										if (_avr_is_instruction_32_bits(avr, new_pc)) {
@@ -1294,12 +1314,12 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 				case 0xb800: {	// OUT A,Rr -- 1011 1AAd dddd AAAA
 					get_d5_a6(opcode);
 					STATE("out %s, %s[%02x]\n", avr_regname(A), avr_regname(d), avr->data[d]);
-					_avr_set_ram(avr, A, avr->data[d]);
+					_avr_set_io(avr, A, avr->data[d]);
 				}	break;
 				case 0xb000: {	// IN Rd,A -- 1011 0AAd dddd AAAA
 					get_d5_a6(opcode);
 					STATE("in %s, %s[%02x]\n", avr_regname(d), avr_regname(A), avr->data[A]);
-					_avr_set_r(avr, d, _avr_get_ram(avr, A));
+					_avr_set_r(avr, d, _avr_get_io(avr, A));
 				}	break;
 				default: _avr_invalid_opcode(avr);
 			}
