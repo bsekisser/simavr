@@ -35,6 +35,8 @@
 #define AVR_KIND_DECL
 #include "sim_core_decl.h"
 
+#include "sim_fast_core_profiler.h"
+
 static void std_logger(avr_t * avr, const int level, const char * format, va_list ap);
 static avr_logger_p _avr_global_logger = std_logger;
 
@@ -65,6 +67,7 @@ avr_global_logger_get(void)
 	return _avr_global_logger;
 }
 
+void avr_callback_run_raw_many(avr_t * avr);
 
 int avr_init(avr_t * avr)
 {
@@ -89,6 +92,7 @@ int avr_init(avr_t * avr)
 		avr->init(avr);
 	// set default (non gdb) fast callbacks
 	avr->run = avr_callback_run_raw;
+//	avr->run = avr_callback_run_raw_many;
 	avr->sleep = avr_callback_sleep_raw;
 	avr->state = cpu_Running;
 	// number of address bytes to push/pull on/off the stack
@@ -326,7 +330,8 @@ void avr_callback_run_raw(avr_t * avr)
 
 	// run the cycle timers, get the suggested sleep time
 	// until the next timer is due
-	avr_cycle_count_t sleep = avr_cycle_timer_process(avr);
+	avr_cycle_count_t sleep;
+	AVR_FAST_CORE_PROFILER_PROFILE(timer, sleep = avr_cycle_timer_process(avr));
 
 	avr->pc = new_pc;
 
@@ -344,14 +349,139 @@ void avr_callback_run_raw(avr_t * avr)
 		avr->cycle += 1 + sleep;
 	}
 	// Interrupt servicing might change the PC too, during 'sleep'
-	if (avr->state == cpu_Running || avr->state == cpu_Sleeping)
-		avr_service_interrupts(avr);
+	if (avr->state == cpu_Running || avr->state == cpu_Sleeping) {
+		AVR_FAST_CORE_PROFILER_PROFILE(isr, avr_service_interrupts(avr));
+	}
 }
 
+#if 1
+void avr_callback_run_raw_many(avr_t * avr)
+{
+	avr_cycle_count_t count = avr_cycle_timer_process(avr);
+	avr_flashaddr_t new_pc = avr->pc;
+
+//	printf("%s: [S_I]=%1d(%1d), avr->cycle = %016llu, count = %08lld pc=%06x state=%02d\n", __FUNCTION__, avr->sreg[S_I], avr->i_shadow, avr->cycle, count, avr->pc, avr->state);
+
+	while ((count > 0) && (avr->state == cpu_Running) && (avr->sreg[S_I] == avr->i_shadow)) {
+			count--;
+			avr->pc = new_pc;
+			new_pc = avr_run_one(avr);
+#if CONFIG_SIMAVR_TRACE
+		avr_dump_state(avr);
+#endif
+	}
+
+//	if(!avr->sreg[S_I] && cpu_Sleeping == avr->state)
+//		printf(">>%s: [S_I]=%1d(%1d), avr->cycle = %016llu, count = %08lld pc=%06x state=%02d\n", __FUNCTION__, avr->sreg[S_I], avr->i_shadow, avr->cycle, count, avr->pc, avr->state);
+
+	// if we just re-enabled the interrupts...
+	// double buffer the I flag, to detect that edge
+	if (avr->sreg[S_I] && !avr->i_shadow)
+		avr->interrupts.pending_wait++;
+	avr->i_shadow = avr->sreg[S_I];
+
+	// run the cycle timers, get the suggested sleep time
+	// until the next timer is due
+	avr_cycle_count_t sleep;
+	AVR_FAST_CORE_PROFILER_PROFILE(timer, sleep = avr_cycle_timer_process(avr));
+
+//	if(!avr->sreg[S_I] && cpu_Sleeping == avr->state) {
+//		printf(">>>>%s: [S_I]=%1d(%1d), avr->cycle = %016llu, sleep = %08lld pc=%06x state=%02d\n", __FUNCTION__, avr->sreg[S_I], avr->i_shadow, avr->cycle, sleep, avr->pc, avr->state);
+//		abort();
+//	}
+	
+	avr->pc = new_pc;
+
+	if (avr->state == cpu_Sleeping) {
+		if (!avr->sreg[S_I]) {
+			if (avr->log)
+				AVR_LOG(avr, LOG_TRACE, "simavr: sleeping with interrupts off, quitting gracefully\n");
+			avr->state = cpu_Done;
+			exit(1);
+			return;
+		}
+		/*
+		 * try to sleep for as long as we can (?)
+		 */
+		avr->sleep(avr, sleep);
+		avr->cycle += 1 + sleep;
+	}
+	// Interrupt servicing might change the PC too, during 'sleep'
+	if (avr->state == cpu_Running || avr->state == cpu_Sleeping) {
+		AVR_FAST_CORE_PROFILER_PROFILE(isr, avr_service_interrupts(avr));
+	}
+}
+#else
+void avr_callback_run_raw_many(avr_t * avr)
+{
+	int32_t count = avr_cycle_timer_process(avr);
+	
+	if(avr->sreg[S_I] != avr->i_shadow)
+		exit(1);
+		
+	printf("%s: [S_I]=%1d(%1d), avr->cycle = %016llu, count = %08d\n", __FUNCTION__, avr->sreg[S_I], avr->i_shadow, avr->cycle, count);
+
+	if(0 == avr->sreg[S_I]) {
+		if(cpu_Running == avr->state) {
+			while((!avr->sreg[S_I]) && (0 < count)) {
+				count--;
+				avr->pc = avr_run_one(avr);
+			}
+
+			if(avr->sreg[S_I] && !avr->i_shadow) {
+				avr->interrupts.pending_wait++;
+				goto interrupts_enabled;
+			}
+interrupts_disabled:
+			avr_cycle_timer_process(avr);
+		} else if(cpu_Sleeping == avr->state) {
+				if (avr->log)
+					AVR_LOG(avr, LOG_TRACE, "simavr: sleeping with interrupts off, quitting gracefully\n");
+				avr->state = cpu_Done;
+				return;
+		}
+	} else {
+/* slow(er) run with interrupt check */
+		if(cpu_Running == avr->state) {
+			while((avr->sreg[S_I]) && (0 < count)) {
+				count--;
+				avr->pc = avr_run_one(avr);
+			}
+			
+			if(!avr->sreg[S_I] && avr->i_shadow) {
+				avr->i_shadow = avr->sreg[S_I];
+				goto interrupts_disabled;
+			}
+		}
+		
+interrupts_enabled:
+		avr->i_shadow = avr->sreg[S_I];
+		
+		count = avr_cycle_timer_process(avr);
+		
+		if(cpu_Sleeping == avr->state) {
+			avr->sleep(avr, count);
+			avr->cycle += (1 + count);
+		}
+		
+		if(cpu_Running == avr->state || cpu_Sleeping == avr->state)
+			avr_service_interrupts(avr);
+		else
+			printf("ERROR!");
+	}
+	
+	if(!avr->sreg[S_I] && cpu_Sleeping == avr->state) {
+		if (avr->log)
+			AVR_LOG(avr, LOG_TRACE, "simavr: sleeping with interrupts off, quitting gracefully\n");
+		avr->state = cpu_Done;
+		exit(1);
+	}
+}
+#endif
 
 int avr_run(avr_t * avr)
 {
-	avr->run(avr);
+	AVR_FAST_CORE_PROFILER_PROFILE(core_loop, avr->run(avr));
 	return avr->state;
 }
 

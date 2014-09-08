@@ -29,6 +29,9 @@
 #include "avr_flash.h"
 #include "avr_watchdog.h"
 
+#include "sim_fast_core_profiler.h"
+#include "sim_fast_core_profiler_core_helper.h"
+
 // SREG bit names
 const char * _sreg_bit_name = "cznvshti";
 
@@ -166,25 +169,30 @@ static inline void _avr_set_r(avr_t * avr, uint8_t r, uint8_t v)
 {
 	REG_TOUCH(avr, r);
 
-	if (r == R_SREG) {
+	if (r == R_SREG) AVR_FAST_CORE_PROFILER_PROFILE(iow_sreg, {
 		avr->data[R_SREG] = v;
 		// unsplit the SREG
 		SET_SREG_FROM(avr, v);
 		SREG();
-	}
+	})
+	
 	if (r > 31) {
 		uint8_t io = AVR_DATA_TO_IO(r);
-		if (avr->io[io].w.c)
+		
+		if (avr->io[io].w.c) AVR_FAST_CORE_PROFILER_PROFILE(iow_wc, {
 			avr->io[io].w.c(avr, r, v, avr->io[io].w.param);
-		else
-			avr->data[r] = v;
-		if (avr->io[io].irq) {
+		}) else {
+			AVR_FAST_CORE_PROFILER_PROFILE(iow_data, avr->data[r] = v);
+		}
+		
+		if (avr->io[io].irq) AVR_FAST_CORE_PROFILER_PROFILE(iow_irq, {
 			avr_raise_irq(avr->io[io].irq + AVR_IOMEM_IRQ_ALL, v);
 			for (int i = 0; i < 8; i++)
 				avr_raise_irq(avr->io[io].irq + i, (v >> i) & 1);				
-		}
-	} else
-		avr->data[r] = v;
+		})
+	} else {
+		AVR_FAST_CORE_PROFILER_PROFILE(iow_data, avr->data[r] = v);
+	}
 }
 
 /*
@@ -206,9 +214,9 @@ inline void _avr_sp_set(avr_t * avr, uint16_t sp)
  */
 static inline void _avr_set_ram(avr_t * avr, uint16_t addr, uint8_t v)
 {
-	if (addr < 256)
-		_avr_set_r(avr, addr, v);
-	else
+	if (addr < 256) {
+		AVR_FAST_CORE_PROFILER_PROFILE(iow, _avr_set_r(avr, addr, v));
+	} else
 		avr_core_watch_write(avr, addr, v);
 }
 
@@ -217,26 +225,29 @@ static inline void _avr_set_ram(avr_t * avr, uint16_t addr, uint8_t v)
  */
 static inline uint8_t _avr_get_ram(avr_t * avr, uint16_t addr)
 {
-	if (addr == R_SREG) {
+AVR_FAST_CORE_PROFILER_PROFILE_START(ior);
+	if (addr == R_SREG) AVR_FAST_CORE_PROFILER_PROFILE(ior_sreg, {
 		/*
 		 * SREG is special it's reconstructed when read
 		 * while the core itself uses the "shortcut" array
 		 */
 		READ_SREG_INTO(avr, avr->data[R_SREG]);
 		
-	} else if (addr > 31 && addr < 256) {
+	}) else if (addr > 31 && addr < 256) {
 		uint8_t io = AVR_DATA_TO_IO(addr);
 		
-		if (avr->io[io].r.c)
+		if (avr->io[io].r.c) AVR_FAST_CORE_PROFILER_PROFILE(ior_rc, {
 			avr->data[addr] = avr->io[io].r.c(avr, addr, avr->io[io].r.param);
+		})
 		
-		if (avr->io[io].irq) {
+		if (avr->io[io].irq) AVR_FAST_CORE_PROFILER_PROFILE(ior_irq, {
 			uint8_t v = avr->data[addr];
 			avr_raise_irq(avr->io[io].irq + AVR_IOMEM_IRQ_ALL, v);
 			for (int i = 0; i < 8; i++)
 				avr_raise_irq(avr->io[io].irq + i, (v >> i) & 1);				
-		}
+		})
 	}
+AVR_FAST_CORE_PROFILER_PROFILE_STOP(ior);
 	return avr_core_watch_read(avr, addr);
 }
 
@@ -562,6 +573,8 @@ static inline int _avr_is_instruction_32_bits(avr_t * avr, avr_flashaddr_t pc)
 			o == 0x940f; // CALL Long Call to sub
 }
 
+#define INST(z) uinst[_avr_fast_core_uinst_##z##_k]
+
 /*
  * Main opcode decoder
  * 
@@ -614,14 +627,14 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 				}	break;
 				default: {
 					switch (opcode & 0xfc00) {
-						case 0x0400: {	// CPC -- Compare with carry -- 0000 01rd dddd rrrr
+						case 0x0400: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5r5_cpc), {	// CPC -- Compare with carry -- 0000 01rd dddd rrrr
 							get_vd5_vr5(opcode);
 							uint8_t res = vd - vr - avr->sreg[S_C];
 							STATE("cpc %s[%02x], %s[%02x] = %02x\n", avr_regname(d), vd, avr_regname(r), vr, res);
 							_avr_flags_sub_Rzns(avr, res, vd, vr);
 							SREG();
-						}	break;
-						case 0x0c00: {	// ADD -- Add without carry -- 0000 11rd dddd rrrr
+						})	break;
+						case 0x0c00: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5r5_add), {	// ADD -- Add without carry -- 0000 11rd dddd rrrr
 							get_vd5_vr5(opcode);
 							uint8_t res = vd + vr;
 							if (r == d) {
@@ -632,24 +645,24 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							_avr_set_r(avr, d, res);
 							_avr_flags_add_zns(avr, res, vd, vr);
 							SREG();
-						}	break;
-						case 0x0800: {	// SBC -- Subtract with carry -- 0000 10rd dddd rrrr
+						})	break;
+						case 0x0800: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5r5_sbc), {	// SBC -- Subtract with carry -- 0000 10rd dddd rrrr
 							get_vd5_vr5(opcode);
 							uint8_t res = vd - vr - avr->sreg[S_C];
 							STATE("sbc %s[%02x], %s[%02x] = %02x\n", avr_regname(d), avr->data[d], avr_regname(r), avr->data[r], res);
 							_avr_set_r(avr, d, res);
 							_avr_flags_sub_Rzns(avr, res, vd, vr);
 							SREG();
-						}	break;
+						})	break;
 						default:
 							switch (opcode & 0xff00) {
-								case 0x0100: {	// MOVW -- Copy Register Word -- 0000 0001 dddd rrrr
+								case 0x0100: AVR_FAST_CORE_PROFILER_PROFILE(INST(d4r4_movw), {	// MOVW -- Copy Register Word -- 0000 0001 dddd rrrr
 									uint8_t d = ((opcode >> 4) & 0xf) << 1;
 									uint8_t r = ((opcode) & 0xf) << 1;
 									STATE("movw %s:%s, %s:%s[%02x%02x]\n", avr_regname(d), avr_regname(d+1), avr_regname(r), avr_regname(r+1), avr->data[r+1], avr->data[r]);
 									_avr_set_r(avr, d, avr->data[r]);
 									_avr_set_r(avr, d+1, avr->data[r+1]);
-								}	break;
+								})	break;
 								case 0x0200: {	// MULS -- Multiply Signed -- 0000 0010 dddd rrrr
 									int8_t r = 16 + (opcode & 0xf);
 									int8_t d = 16 + ((opcode >> 4) & 0xf);
@@ -710,15 +723,15 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 
 		case 0x1000: {
 			switch (opcode & 0xfc00) {
-				case 0x1800: {	// SUB -- Subtract without carry -- 0001 10rd dddd rrrr
+				case 0x1800: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5r5_sub), {	// SUB -- Subtract without carry -- 0001 10rd dddd rrrr
 					get_vd5_vr5(opcode);
 					uint8_t res = vd - vr;
 					STATE("sub %s[%02x], %s[%02x] = %02x\n", avr_regname(d), vd, avr_regname(r), vr, res);
 					_avr_set_r(avr, d, res);
 					_avr_flags_sub_zns(avr, res, vd, vr);
 					SREG();
-				}	break;
-				case 0x1000: {	// CPSE -- Compare, skip if equal -- 0001 00rd dddd rrrr
+				})	break;
+				case 0x1000: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5r5_cpse), {	// CPSE -- Compare, skip if equal -- 0001 00rd dddd rrrr
 					get_vd5_vr5(opcode);
 					uint16_t res = vd == vr;
 					STATE("cpse %s[%02x], %s[%02x]\t; Will%s skip\n", avr_regname(d), avr->data[d], avr_regname(r), avr->data[r], res ? "":" not");
@@ -729,15 +742,15 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							new_pc += 2; cycle++;
 						}
 					}
-				}	break;
-				case 0x1400: {	// CP -- Compare -- 0001 01rd dddd rrrr
+				})	break;
+				case 0x1400: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5r5_cp), {	// CP -- Compare -- 0001 01rd dddd rrrr
 					get_vd5_vr5(opcode);
 					uint8_t res = vd - vr;
 					STATE("cp %s[%02x], %s[%02x] = %02x\n", avr_regname(d), vd, avr_regname(r), vr, res);
 					_avr_flags_sub_zns(avr, res, vd, vr);
 					SREG();
-				}	break;
-				case 0x1c00: {	// ADD -- Add with carry -- 0001 11rd dddd rrrr
+				})	break;
+				case 0x1c00: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5r5_adc), {	// ADD -- Add with carry -- 0001 11rd dddd rrrr
 					get_vd5_vr5(opcode);
 					uint8_t res = vd + vr + avr->sreg[S_C];
 					if (r == d) {
@@ -748,14 +761,14 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 					_avr_set_r(avr, d, res);
 					_avr_flags_add_zns(avr, res, vd, vr);
 					SREG();
-				}	break;
+				})	break;
 				default: _avr_invalid_opcode(avr);
 			}
 		}	break;
 
 		case 0x2000: {
 			switch (opcode & 0xfc00) {
-				case 0x2000: {	// AND -- Logical AND -- 0010 00rd dddd rrrr
+				case 0x2000: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5r5_and), {	// AND -- Logical AND -- 0010 00rd dddd rrrr
 					get_vd5_vr5(opcode);
 					uint8_t res = vd & vr;
 					if (r == d) {
@@ -766,8 +779,8 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 					_avr_set_r(avr, d, res);
 					_avr_flags_znv0s(avr, res);
 					SREG();
-				}	break;
-				case 0x2400: {	// EOR -- Logical Exclusive OR -- 0010 01rd dddd rrrr
+				})	break;
+				case 0x2400: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5r5_eor), {	// EOR -- Logical Exclusive OR -- 0010 01rd dddd rrrr
 					get_vd5_vr5(opcode);
 					uint8_t res = vd ^ vr;
 					if (r==d) {
@@ -778,68 +791,68 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 					_avr_set_r(avr, d, res);
 					_avr_flags_znv0s(avr, res);
 					SREG();
-				}	break;
-				case 0x2800: {	// OR -- Logical OR -- 0010 10rd dddd rrrr
+				})	break;
+				case 0x2800: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5r5_or), {	// OR -- Logical OR -- 0010 10rd dddd rrrr
 					get_vd5_vr5(opcode);
 					uint8_t res = vd | vr;
 					STATE("or %s[%02x], %s[%02x] = %02x\n", avr_regname(d), vd, avr_regname(r), vr, res);
 					_avr_set_r(avr, d, res);
 					_avr_flags_znv0s(avr, res);
 					SREG();
-				}	break;
-				case 0x2c00: {	// MOV -- 0010 11rd dddd rrrr
+				})	break;
+				case 0x2c00: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5r5_mov), {	// MOV -- 0010 11rd dddd rrrr
 					get_d5_vr5(opcode);
 					uint8_t res = vr;
 					STATE("mov %s, %s[%02x] = %02x\n", avr_regname(d), avr_regname(r), vr, res);
 					_avr_set_r(avr, d, res);
-				}	break;
+				})	break;
 				default: _avr_invalid_opcode(avr);
 			}
 		}	break;
 
-		case 0x3000: {	// CPI -- Compare Immediate -- 0011 kkkk hhhh kkkk
+		case 0x3000: AVR_FAST_CORE_PROFILER_PROFILE(INST(h4k8_cpi), {	// CPI -- Compare Immediate -- 0011 kkkk hhhh kkkk
 			get_vh4_k8(opcode);
 			uint8_t res = vh - k;
 			STATE("cpi %s[%02x], 0x%02x\n", avr_regname(h), vh, k);
 			_avr_flags_sub_zns(avr, res, vh, k);
 			SREG();
-		}	break;
+		})	break;
 
-		case 0x4000: {	// SBCI -- Subtract Immediate With Carry -- 0100 kkkk hhhh kkkk
+		case 0x4000: AVR_FAST_CORE_PROFILER_PROFILE(INST(h4k8_sbci), {	// SBCI -- Subtract Immediate With Carry -- 0100 kkkk hhhh kkkk
 			get_vh4_k8(opcode);
 			uint8_t res = vh - k - avr->sreg[S_C];
 			STATE("sbci %s[%02x], 0x%02x = %02x\n", avr_regname(h), vh, k, res);
 			_avr_set_r(avr, h, res);
 			_avr_flags_sub_Rzns(avr, res, vh, k);
 			SREG();
-		}	break;
+		})	break;
 
-		case 0x5000: {	// SUBI -- Subtract Immediate -- 0101 kkkk hhhh kkkk
+		case 0x5000: AVR_FAST_CORE_PROFILER_PROFILE(INST(h4k8_subi), {	// SUBI -- Subtract Immediate -- 0101 kkkk hhhh kkkk
 			get_vh4_k8(opcode);
 			uint8_t res = vh - k;
 			STATE("subi %s[%02x], 0x%02x = %02x\n", avr_regname(h), vh, k, res);
 			_avr_set_r(avr, h, res);
 			_avr_flags_sub_zns(avr, res, vh, k);
 			SREG();
-		}	break;
+		})	break;
 
-		case 0x6000: {	// ORI aka SBR -- Logical OR with Immediate -- 0110 kkkk hhhh kkkk
+		case 0x6000: AVR_FAST_CORE_PROFILER_PROFILE(INST(h4k8_ori), {	// ORI aka SBR -- Logical OR with Immediate -- 0110 kkkk hhhh kkkk
 			get_vh4_k8(opcode);
 			uint8_t res = vh | k;
 			STATE("ori %s[%02x], 0x%02x\n", avr_regname(h), vh, k);
 			_avr_set_r(avr, h, res);
 			_avr_flags_znv0s(avr, res);
 			SREG();
-		}	break;
+		})	break;
 
-		case 0x7000: {	// ANDI	-- Logical AND with Immediate -- 0111 kkkk hhhh kkkk
+		case 0x7000: AVR_FAST_CORE_PROFILER_PROFILE(INST(h4k8_andi), {	// ANDI	-- Logical AND with Immediate -- 0111 kkkk hhhh kkkk
 			get_vh4_k8(opcode);
 			uint8_t res = vh & k;
 			STATE("andi %s[%02x], 0x%02x\n", avr_regname(h), vh, k);
 			_avr_set_r(avr, h, res);
 			_avr_flags_znv0s(avr, res);
 			SREG();
-		}	break;
+		})	break;
 
 		case 0xa000:
 		case 0x8000: {
@@ -853,7 +866,7 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 			 */
 			switch (opcode & 0xd008) {
 				case 0xa000:
-				case 0x8000: {	// LD (LDD) -- Load Indirect using Z -- 10q0 qqsd dddd yqqq
+				case 0x8000: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5rYZq6_ldst), {	// LD (LDD) -- Load Indirect using Z -- 10q0 qqsd dddd yqqq
 					uint16_t v = avr->data[R_ZL] | (avr->data[R_ZH] << 8);
 					get_d5_q6(opcode);
 					if (opcode & 0x0200) {
@@ -864,9 +877,9 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 						_avr_set_r(avr, d, _avr_get_ram(avr, v+q));
 					}
 					cycle += 1; // 2 cycles, 3 for tinyavr
-				}	break;
+				})	break;
 				case 0xa008:
-				case 0x8008: {	// LD (LDD) -- Load Indirect using Y -- 10q0 qqsd dddd yqqq
+				case 0x8008: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5rYZq6_ldst), {	// LD (LDD) -- Load Indirect using Y -- 10q0 qqsd dddd yqqq
 					uint16_t v = avr->data[R_YL] | (avr->data[R_YH] << 8);
 					get_d5_q6(opcode);
 					if (opcode & 0x0200) {
@@ -877,7 +890,7 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 						_avr_set_r(avr, d, _avr_get_ram(avr, v+q));
 					}
 					cycle += 1; // 2 cycles, 3 for tinyavr
-				}	break;
+				})	break;
 				default: _avr_invalid_opcode(avr);
 			}
 		}	break;
@@ -890,7 +903,7 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 				avr->sreg[b] = (opcode & 0x0080) == 0;
 				SREG();
 			} else switch (opcode) {
-				case 0x9588: { // SLEEP -- 1001 0101 1000 1000
+				case 0x9588: AVR_FAST_CORE_PROFILER_PROFILE(INST(x_sleep), { // SLEEP -- 1001 0101 1000 1000
 					STATE("sleep\n");
 					/* Don't sleep if there are interrupts about to be serviced.
 					 * Without this check, it was possible to incorrectly enter a state
@@ -898,7 +911,7 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 					 * details, see the commit message. */
 					if (!avr_has_pending_interrupts(avr) || !avr->sreg[S_I])
 						avr->state = cpu_Sleeping;
-				}	break;
+				})	break;
 				case 0x9598: { // BREAK -- 1001 0101 1001 1000
 					STATE("break\n");
 					if (avr->gdb) {
@@ -946,40 +959,40 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 					TRACE_JUMP();
 					STACK_FRAME_POP();
 				}	break;
-				case 0x95c8: {	// LPM -- Load Program Memory R0 <- (Z) -- 1001 0101 1100 1000
+				case 0x95c8: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5_lpm_z), {	// LPM -- Load Program Memory R0 <- (Z) -- 1001 0101 1100 1000
 					uint16_t z = avr->data[R_ZL] | (avr->data[R_ZH] << 8);
 					STATE("lpm %s, (Z[%04x])\n", avr_regname(0), z);
 					cycle += 2; // 3 cycles
 					_avr_set_r(avr, 0, avr->flash[z]);
-				}	break;
+				})	break;
 				case 0x9408:case 0x9418:case 0x9428:case 0x9438:case 0x9448:case 0x9458:case 0x9468:
-				case 0x9478:
+				case 0x9478: AVR_FAST_CORE_PROFILER_PROFILE(INST(b3_bset),
 				{	// BSET -- Set Bit in SREG -- 1001 0100 0bbb 1000
 					get_sreg_bit(opcode);
 					avr->sreg[b] = 1;
 					STATE("bset %c\n", _sreg_bit_name[b]);
 					SREG();
-				}	break;
+				})	break;
 				case 0x9488:case 0x9498:case 0x94a8:case 0x94b8:case 0x94c8:case 0x94d8:case 0x94e8:
-				case 0x94f8:	// bit 7 is 'clear vs set'
+				case 0x94f8: AVR_FAST_CORE_PROFILER_PROFILE(INST(b3_bclr),	// bit 7 is 'clear vs set'
 				{	// BCLR -- Clear Bit in SREG -- 1001 0100 1bbb 1000
 					get_sreg_bit(opcode);
 					avr->sreg[b] = 0;
 					STATE("bclr %c\n", _sreg_bit_name[b]);
 					SREG();
-				}	break;
+				})	break;
 				default:  {
 					switch (opcode & 0xfe0f) {
-						case 0x9000: {	// LDS -- Load Direct from Data Space, 32 bits -- 1001 0000 0000 0000
+						case 0x9000: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5x16_lds), {	// LDS -- Load Direct from Data Space, 32 bits -- 1001 0000 0000 0000
 							get_d5(opcode);
 							uint16_t x = (avr->flash[new_pc+1] << 8) | avr->flash[new_pc];
 							new_pc += 2;
 							STATE("lds %s[%02x], 0x%04x\n", avr_regname(d), avr->data[d], x);
 							_avr_set_r(avr, d, _avr_get_ram(avr, x));
 							cycle++; // 2 cycles
-						}	break;
+						})	break;
 						case 0x9005:
-						case 0x9004: {	// LPM -- Load Program Memory -- 1001 000d dddd 01oo
+						case 0x9004: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5_lpm_z), {	// LPM -- Load Program Memory -- 1001 000d dddd 01oo
 							get_d5(opcode);
 							uint16_t z = avr->data[R_ZL] | (avr->data[R_ZH] << 8);
 							int op = opcode & 1;
@@ -991,7 +1004,7 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 								_avr_set_r(avr, R_ZL, z);
 							}
 							cycle += 2; // 3 cycles
-						}	break;
+						})	break;
 						case 0x9006:
 						case 0x9007: {	// ELPM -- Extended Load Program Memory -- 1001 000d dddd 01oo
 							if (!avr->rampz)
@@ -1019,7 +1032,7 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 						 */
 						case 0x900c:
 						case 0x900d:
-						case 0x900e: {	// LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo
+						case 0x900e: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5rXYZ_ld), {	// LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo
 							int op = opcode & 3;
 							get_d5(opcode);
 							uint16_t x = (avr->data[R_XH] << 8) | avr->data[R_XL];
@@ -1031,10 +1044,10 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							_avr_set_r(avr, R_XH, x >> 8);
 							_avr_set_r(avr, R_XL, x);
 							_avr_set_r(avr, d, vd);
-						}	break;
+						})	break;
 						case 0x920c:
 						case 0x920d:
-						case 0x920e: {	// ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo
+						case 0x920e: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5rXYZ_st), {	// ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo
 							int op = opcode & 3;
 							get_vd5(opcode);
 							uint16_t x = (avr->data[R_XH] << 8) | avr->data[R_XL];
@@ -1045,9 +1058,9 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							if (op == 1) x++;
 							_avr_set_r(avr, R_XH, x >> 8);
 							_avr_set_r(avr, R_XL, x);
-						}	break;
+						})	break;
 						case 0x9009:
-						case 0x900a: {	// LD -- Load Indirect from Data using Y -- 1001 000d dddd 10oo
+						case 0x900a: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5rXYZ_ld), {	// LD -- Load Indirect from Data using Y -- 1001 000d dddd 10oo
 							int op = opcode & 3;
 							get_d5(opcode);
 							uint16_t y = (avr->data[R_YH] << 8) | avr->data[R_YL];
@@ -1059,9 +1072,9 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							_avr_set_r(avr, R_YH, y >> 8);
 							_avr_set_r(avr, R_YL, y);
 							_avr_set_r(avr, d, vd);
-						}	break;
+						})	break;
 						case 0x9209:
-						case 0x920a: {	// ST -- Store Indirect Data Space Y -- 1001 001d dddd 10oo
+						case 0x920a: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5rXYZ_st), {	// ST -- Store Indirect Data Space Y -- 1001 001d dddd 10oo
 							int op = opcode & 3;
 							get_vd5(opcode);
 							uint16_t y = (avr->data[R_YH] << 8) | avr->data[R_YL];
@@ -1072,17 +1085,17 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							if (op == 1) y++;
 							_avr_set_r(avr, R_YH, y >> 8);
 							_avr_set_r(avr, R_YL, y);
-						}	break;
-						case 0x9200: {	// STS -- Store Direct to Data Space, 32 bits -- 1001 0010 0000 0000
+						})	break;
+						case 0x9200: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5x16_sts), {	// STS -- Store Direct to Data Space, 32 bits -- 1001 0010 0000 0000
 							get_vd5(opcode);
 							uint16_t x = (avr->flash[new_pc+1] << 8) | avr->flash[new_pc];
 							new_pc += 2;
 							STATE("sts 0x%04x, %s[%02x]\n", x, avr_regname(d), vd);
 							cycle++;
 							_avr_set_ram(avr, x, vd);
-						}	break;
+						})	break;
 						case 0x9001:
-						case 0x9002: {	// LD -- Load Indirect from Data using Z -- 1001 000d dddd 00oo
+						case 0x9002: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5rXYZ_ld), {	// LD -- Load Indirect from Data using Z -- 1001 000d dddd 00oo
 							int op = opcode & 3;
 							get_d5(opcode);
 							uint16_t z = (avr->data[R_ZH] << 8) | avr->data[R_ZL];
@@ -1094,9 +1107,9 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							_avr_set_r(avr, R_ZH, z >> 8);
 							_avr_set_r(avr, R_ZL, z);
 							_avr_set_r(avr, d, vd);
-						}	break;
+						})	break;
 						case 0x9201:
-						case 0x9202: {	// ST -- Store Indirect Data Space Z -- 1001 001d dddd 00oo
+						case 0x9202: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5rXYZ_st), {	// ST -- Store Indirect Data Space Z -- 1001 001d dddd 00oo
 							int op = opcode & 3;
 							get_vd5(opcode);
 							uint16_t z = (avr->data[R_ZH] << 8) | avr->data[R_ZL];
@@ -1107,22 +1120,22 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							if (op == 1) z++;
 							_avr_set_r(avr, R_ZH, z >> 8);
 							_avr_set_r(avr, R_ZL, z);
-						}	break;
-						case 0x900f: {	// POP -- 1001 000d dddd 1111
+						})	break;
+						case 0x900f: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5_pop), {	// POP -- 1001 000d dddd 1111
 							get_d5(opcode);
 							_avr_set_r(avr, d, _avr_pop8(avr));
 							T(uint16_t sp = _avr_sp_get(avr);)
 							STATE("pop %s (@%04x)[%02x]\n", avr_regname(d), sp, avr->data[sp]);
 							cycle++;
-						}	break;
-						case 0x920f: {	// PUSH -- 1001 001d dddd 1111
+						})	break;
+						case 0x920f: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5_push), {	// PUSH -- 1001 001d dddd 1111
 							get_vd5(opcode);
 							_avr_push8(avr, vd);
 							T(uint16_t sp = _avr_sp_get(avr);)
 							STATE("push %s[%02x] (@%04x)\n", avr_regname(d), vd, sp);
 							cycle++;
-						}	break;
-						case 0x9400: {	// COM -- One’s Complement -- 1001 010d dddd 0000
+						})	break;
+						case 0x9400: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5_com), {	// COM -- One’s Complement -- 1001 010d dddd 0000
 							get_vd5(opcode);
 							uint8_t res = 0xff - vd;
 							STATE("com %s[%02x] = %02x\n", avr_regname(d), vd, res);
@@ -1130,8 +1143,8 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							_avr_flags_znv0s(avr, res);
 							avr->sreg[S_C] = 1;
 							SREG();
-						}	break;
-						case 0x9401: {	// NEG -- Two’s Complement -- 1001 010d dddd 0001
+						})	break;
+						case 0x9401: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5_neg), {	// NEG -- Two’s Complement -- 1001 010d dddd 0001
 							get_vd5(opcode);
 							uint8_t res = 0x00 - vd;
 							STATE("neg %s[%02x] = %02x\n", avr_regname(d), vd, res);
@@ -1141,14 +1154,14 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							avr->sreg[S_C] = res != 0;
 							_avr_flags_zns(avr, res);
 							SREG();
-						}	break;
-						case 0x9402: {	// SWAP -- Swap Nibbles -- 1001 010d dddd 0010
+						})	break;
+						case 0x9402: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5_swap), {	// SWAP -- Swap Nibbles -- 1001 010d dddd 0010
 							get_vd5(opcode);
 							uint8_t res = (vd >> 4) | (vd << 4) ;
 							STATE("swap %s[%02x] = %02x\n", avr_regname(d), vd, res);
 							_avr_set_r(avr, d, res);
-						}	break;
-						case 0x9403: {	// INC -- Increment -- 1001 010d dddd 0011
+						})	break;
+						case 0x9403: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5_inc), {	// INC -- Increment -- 1001 010d dddd 0011
 							get_vd5(opcode);
 							uint8_t res = vd + 1;
 							STATE("inc %s[%02x] = %02x\n", avr_regname(d), vd, res);
@@ -1156,16 +1169,16 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							avr->sreg[S_V] = res == 0x80;
 							_avr_flags_zns(avr, res);
 							SREG();
-						}	break;
-						case 0x9405: {	// ASR -- Arithmetic Shift Right -- 1001 010d dddd 0101
+						})	break;
+						case 0x9405: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5_asr), {	// ASR -- Arithmetic Shift Right -- 1001 010d dddd 0101
 							get_vd5(opcode);
 							uint8_t res = (vd >> 1) | (vd & 0x80);
 							STATE("asr %s[%02x]\n", avr_regname(d), vd);
 							_avr_set_r(avr, d, res);
 							_avr_flags_zcnvs(avr, res, vd);
 							SREG();
-						}	break;
-						case 0x9406: {	// LSR -- Logical Shift Right -- 1001 010d dddd 0110
+						})	break;
+						case 0x9406: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5_lsr), {	// LSR -- Logical Shift Right -- 1001 010d dddd 0110
 							get_vd5(opcode);
 							uint8_t res = vd >> 1;
 							STATE("lsr %s[%02x]\n", avr_regname(d), vd);
@@ -1173,16 +1186,16 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							avr->sreg[S_N] = 0;
 							_avr_flags_zcvs(avr, res, vd);
 							SREG();
-						}	break;
-						case 0x9407: {	// ROR -- Rotate Right -- 1001 010d dddd 0111
+						})	break;
+						case 0x9407: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5_ror), {	// ROR -- Rotate Right -- 1001 010d dddd 0111
 							get_vd5(opcode);
 							uint8_t res = (avr->sreg[S_C] ? 0x80 : 0) | vd >> 1;
 							STATE("ror %s[%02x]\n", avr_regname(d), vd);
 							_avr_set_r(avr, d, res);
 							_avr_flags_zcnvs(avr, res, vd);
 							SREG();
-						}	break;
-						case 0x940a: {	// DEC -- Decrement -- 1001 010d dddd 1010
+						})	break;
+						case 0x940a: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5_dec), {	// DEC -- Decrement -- 1001 010d dddd 1010
 							get_vd5(opcode);
 							uint8_t res = vd - 1;
 							STATE("dec %s[%02x] = %02x\n", avr_regname(d), vd, res);
@@ -1190,9 +1203,9 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							avr->sreg[S_V] = res == 0x7f;
 							_avr_flags_zns(avr, res);
 							SREG();
-						}	break;
+						})	break;
 						case 0x940c:
-						case 0x940d: {	// JMP -- Long Call to sub, 32 bits -- 1001 010a aaaa 110a
+						case 0x940d: AVR_FAST_CORE_PROFILER_PROFILE(INST(x22_jmp), {	// JMP -- Long Call to sub, 32 bits -- 1001 010a aaaa 110a
 							avr_flashaddr_t a = ((opcode & 0x01f0) >> 3) | (opcode & 1);
 							uint16_t x = (avr->flash[new_pc+1] << 8) | avr->flash[new_pc];
 							a = (a << 16) | x;
@@ -1200,9 +1213,9 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							new_pc = a << 1;
 							cycle += 2;
 							TRACE_JUMP();
-						}	break;
+						})	break;
 						case 0x940e:
-						case 0x940f: {	// CALL -- Long Call to sub, 32 bits -- 1001 010a aaaa 111a
+						case 0x940f: AVR_FAST_CORE_PROFILER_PROFILE(INST(x22_call), {	// CALL -- Long Call to sub, 32 bits -- 1001 010a aaaa 111a
 							avr_flashaddr_t a = ((opcode & 0x01f0) >> 3) | (opcode & 1);
 							uint16_t x = (avr->flash[new_pc+1] << 8) | avr->flash[new_pc];
 							a = (a << 16) | x;
@@ -1212,11 +1225,11 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							new_pc = a << 1;
 							TRACE_JUMP();
 							STACK_FRAME_PUSH();
-						}	break;
+						})	break;
 
 						default: {
 							switch (opcode & 0xff00) {
-								case 0x9600: {	// ADIW -- Add Immediate to Word -- 1001 0110 KKpp KKKK
+								case 0x9600: AVR_FAST_CORE_PROFILER_PROFILE(INST(p2k6_adiw), {	// ADIW -- Add Immediate to Word -- 1001 0110 KKpp KKKK
 									get_vp2_k6(opcode);
 									uint16_t res = vp + k;
 									STATE("adiw %s:%s[%04x], 0x%02x\n", avr_regname(p), avr_regname(p + 1), vp, k);
@@ -1227,8 +1240,8 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 									_avr_flags_zns16(avr, res);
 									SREG();
 									cycle++;
-								}	break;
-								case 0x9700: {	// SBIW -- Subtract Immediate from Word -- 1001 0111 KKpp KKKK
+								})	break;
+								case 0x9700: AVR_FAST_CORE_PROFILER_PROFILE(INST(p2k6_sbiw), {	// SBIW -- Subtract Immediate from Word -- 1001 0111 KKpp KKKK
 									get_vp2_k6(opcode);
 									uint16_t res = vp - k;
 									STATE("sbiw %s:%s[%04x], 0x%02x\n", avr_regname(p), avr_regname(p + 1), vp, k);
@@ -1239,15 +1252,15 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 									_avr_flags_zns16(avr, res);
 									SREG();
 									cycle++;
-								}	break;
-								case 0x9800: {	// CBI -- Clear Bit in I/O Register -- 1001 1000 AAAA Abbb
+								})	break;
+								case 0x9800: AVR_FAST_CORE_PROFILER_PROFILE(INST(a5m8_cbi), {	// CBI -- Clear Bit in I/O Register -- 1001 1000 AAAA Abbb
 									get_io5_b3mask(opcode);
 									uint8_t res = _avr_get_ram(avr, io) & ~mask;
 									STATE("cbi %s[%04x], 0x%02x = %02x\n", avr_regname(io), avr->data[io], mask, res);
 									_avr_set_ram(avr, io, res);
 									cycle++;
-								}	break;
-								case 0x9900: {	// SBIC -- Skip if Bit in I/O Register is Cleared -- 1001 1001 AAAA Abbb
+								})	break;
+								case 0x9900: AVR_FAST_CORE_PROFILER_PROFILE(INST(a5m8_sbic), {	// SBIC -- Skip if Bit in I/O Register is Cleared -- 1001 1001 AAAA Abbb
 									get_io5_b3mask(opcode);
 									uint8_t res = _avr_get_ram(avr, io) & mask;
 									STATE("sbic %s[%04x], 0x%02x\t; Will%s branch\n", avr_regname(io), avr->data[io], mask, !res?"":" not");
@@ -1258,15 +1271,15 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 											new_pc += 2; cycle++;
 										}
 									}
-								}	break;
-								case 0x9a00: {	// SBI -- Set Bit in I/O Register -- 1001 1010 AAAA Abbb
+								})	break;
+								case 0x9a00: AVR_FAST_CORE_PROFILER_PROFILE(INST(a5m8_sbi), {	// SBI -- Set Bit in I/O Register -- 1001 1010 AAAA Abbb
 									get_io5_b3mask(opcode);
 									uint8_t res = _avr_get_ram(avr, io) | mask;
 									STATE("sbi %s[%04x], 0x%02x = %02x\n", avr_regname(io), avr->data[io], mask, res);
 									_avr_set_ram(avr, io, res);
 									cycle++;
-								}	break;
-								case 0x9b00: {	// SBIS -- Skip if Bit in I/O Register is Set -- 1001 1011 AAAA Abbb
+								})	break;
+								case 0x9b00: AVR_FAST_CORE_PROFILER_PROFILE(INST(a5m8_sbis), {	// SBIS -- Skip if Bit in I/O Register is Set -- 1001 1011 AAAA Abbb
 									get_io5_b3mask(opcode);
 									uint8_t res = _avr_get_ram(avr, io) & mask;
 									STATE("sbis %s[%04x], 0x%02x\t; Will%s branch\n", avr_regname(io), avr->data[io], mask, res?"":" not");
@@ -1277,10 +1290,10 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 											new_pc += 2; cycle++;
 										}
 									}
-								}	break;
+								})	break;
 								default:
 									switch (opcode & 0xfc00) {
-										case 0x9c00: {	// MUL -- Multiply Unsigned -- 1001 11rd dddd rrrr
+										case 0x9c00: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5r5_mul), {	// MUL -- Multiply Unsigned -- 1001 11rd dddd rrrr
 											get_vd5_vr5(opcode);
 											uint16_t res = vd * vr;
 											STATE("mul %s[%02x], %s[%02x] = %04x\n", avr_regname(d), vd, avr_regname(r), vr, res);
@@ -1290,7 +1303,7 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 											avr->sreg[S_Z] = res == 0;
 											avr->sreg[S_C] = (res >> 15) & 1;
 											SREG();
-										}	break;
+										})	break;
 										default: _avr_invalid_opcode(avr);
 									}
 							}
@@ -1302,29 +1315,29 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 
 		case 0xb000: {
 			switch (opcode & 0xf800) {
-				case 0xb800: {	// OUT A,Rr -- 1011 1AAd dddd AAAA
+				case 0xb800: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5a6_out), {	// OUT A,Rr -- 1011 1AAd dddd AAAA
 					get_d5_a6(opcode);
 					STATE("out %s, %s[%02x]\n", avr_regname(A), avr_regname(d), avr->data[d]);
 					_avr_set_ram(avr, A, avr->data[d]);
-				}	break;
-				case 0xb000: {	// IN Rd,A -- 1011 0AAd dddd AAAA
+				})	break;
+				case 0xb000: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5a6_in), {	// IN Rd,A -- 1011 0AAd dddd AAAA
 					get_d5_a6(opcode);
 					STATE("in %s, %s[%02x]\n", avr_regname(d), avr_regname(A), avr->data[A]);
 					_avr_set_r(avr, d, _avr_get_ram(avr, A));
-				}	break;
+				})	break;
 				default: _avr_invalid_opcode(avr);
 			}
 		}	break;
 
-		case 0xc000: {	// RJMP -- 1100 kkkk kkkk kkkk
+		case 0xc000: AVR_FAST_CORE_PROFILER_PROFILE(INST(o12_rjmp), {	// RJMP -- 1100 kkkk kkkk kkkk
 			get_o12(opcode);
 			STATE("rjmp .%d [%04x]\n", o >> 1, new_pc + o);
 			new_pc = new_pc + o;
 			cycle++;
 			TRACE_JUMP();
-		}	break;
+		})	break;
 
-		case 0xd000: {	// RCALL -- 1101 kkkk kkkk kkkk
+		case 0xd000: AVR_FAST_CORE_PROFILER_PROFILE(INST(o12_rcall), {	// RCALL -- 1101 kkkk kkkk kkkk
 			get_o12(opcode);
 			STATE("rcall .%d [%04x]\n", o >> 1, new_pc + o);
 			cycle += _avr_push_addr(avr, new_pc);
@@ -1334,13 +1347,13 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 				TRACE_JUMP();
 				STACK_FRAME_PUSH();
 			}
-		}	break;
+		})	break;
 
-		case 0xe000: {	// LDI Rd, K aka SER (LDI r, 0xff) -- 1110 kkkk dddd kkkk
+		case 0xe000: AVR_FAST_CORE_PROFILER_PROFILE(INST(h4k8_ldi), {	// LDI Rd, K aka SER (LDI r, 0xff) -- 1110 kkkk dddd kkkk
 			get_h4_k8(opcode);
 			STATE("ldi %s, 0x%02x\n", avr_regname(h), k);
 			_avr_set_r(avr, h, k);
-		}	break;
+		})	break;
 
 		case 0xf000: {
 			switch (opcode & 0xfe00) {
@@ -1348,6 +1361,8 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 				case 0xf200:
 				case 0xf400:
 				case 0xf600: {	// BRXC/BRXS -- All the SREG branches -- 1111 0Boo oooo osss
+//				case 0xf600: AVR_FAST_CORE_PROFILER_PROFILE(INST(b3o7_brxx), {	// BRXC/BRXS -- All the SREG branches -- 1111 0Boo oooo osss
+AVR_FAST_CORE_PROFILER_PROFILE_START(INST(b3o7_brxx));
 					int16_t o = ((int16_t)(opcode << 6)) >> 9; // offset
 					uint8_t s = opcode & 7;
 					int set = (opcode & 0x0400) == 0;		// this bit means BRXC otherwise BRXS
@@ -1365,24 +1380,25 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 						cycle++; // 2 cycles if taken, 1 otherwise
 						new_pc = new_pc + (o << 1);
 					}
+AVR_FAST_CORE_PROFILER_PROFILE_STOP(INST(b3o7_brxx));
 				}	break;
 				case 0xf800:
-				case 0xf900: {	// BLD -- Bit Store from T into a Bit in Register -- 1111 100d dddd 0bbb
+				case 0xf900: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5m8_bld), {	// BLD -- Bit Store from T into a Bit in Register -- 1111 100d dddd 0bbb
 					get_vd5_s3_mask(opcode);
 					uint8_t v = (vd & ~mask) | (avr->sreg[S_T] ? mask : 0);
 					STATE("bld %s[%02x], 0x%02x = %02x\n", avr_regname(d), vd, mask, v);
 					_avr_set_r(avr, d, v);
-				}	break;
+				})	break;
 				case 0xfa00:
-				case 0xfb00:{	// BST -- Bit Store into T from bit in Register -- 1111 101d dddd 0bbb
-					get_vd5_s3(opcode)
+				case 0xfb00: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5b3_bst), {	// BST -- Bit Store into T from bit in Register -- 1111 101d dddd 0bbb
+					get_vd5_s3(opcode);
 					STATE("bst %s[%02x], 0x%02x\n", avr_regname(d), vd, 1 << s);
 					avr->sreg[S_T] = (vd >> s) & 1;
 					SREG();
-				}	break;
+				})	break;
 				case 0xfc00:
-				case 0xfe00: {	// SBRS/SBRC -- Skip if Bit in Register is Set/Clear -- 1111 11sd dddd 0bbb
-					get_vd5_s3_mask(opcode)
+				case 0xfe00: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5s3_sbrx), {	// SBRS/SBRC -- Skip if Bit in Register is Set/Clear -- 1111 11sd dddd 0bbb
+					get_vd5_s3_mask(opcode);
 					int set = (opcode & 0x0200) != 0;
 					int branch = ((vd & mask) && set) || (!(vd & mask) && !set);
 					STATE("%s %s[%02x], 0x%02x\t; Will%s branch\n", set ? "sbrs" : "sbrc", avr_regname(d), vd, mask, branch ? "":" not");
@@ -1393,7 +1409,7 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 							new_pc += 2; cycle++;
 						}
 					}
-				}	break;
+				})	break;
 				default: _avr_invalid_opcode(avr);
 			}
 		}	break;
