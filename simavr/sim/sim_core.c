@@ -29,6 +29,7 @@
 #include "avr_flash.h"
 #include "avr_watchdog.h"
 
+#define CONFIG_AVR_CORE_PROFILING
 #include "sim_fast_core_profiler.h"
 #include "sim_fast_core_profiler_core_helper.h"
 
@@ -190,9 +191,8 @@ static inline void _avr_set_r(avr_t * avr, uint8_t r, uint8_t v)
 			for (int i = 0; i < 8; i++)
 				avr_raise_irq(avr->io[io].irq + i, (v >> i) & 1);				
 		})
-	} else {
-		AVR_FAST_CORE_PROFILER_PROFILE(iow_data, avr->data[r] = v);
-	}
+	} else
+		avr->data[r] = v;
 }
 
 /*
@@ -594,6 +594,8 @@ static inline int _avr_is_instruction_32_bits(avr_t * avr, avr_flashaddr_t pc)
  */
 avr_flashaddr_t avr_run_one(avr_t * avr)
 {
+run_one_again:
+	AVR_FAST_CORE_PROFILER_PROFILE_START(core_run_one);
 #if CONFIG_SIMAVR_TRACE
 	/*
 	 * this traces spurious reset or bad jumps
@@ -896,13 +898,16 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 		}	break;
 
 		case 0x9000: {
+#if 0
 			/* this is an annoying special case, but at least these lines handle all the SREG set/clear opcodes */
 			if ((opcode & 0xff0f) == 0x9408) {
 				get_sreg_bit(opcode);
 				STATE("%s%c\n", opcode & 0x0080 ? "cl" : "se", _sreg_bit_name[b]);
 				avr->sreg[b] = (opcode & 0x0080) == 0;
 				SREG();
-			} else switch (opcode) {
+			} else 
+#endif
+			switch (opcode) {
 				case 0x9588: AVR_FAST_CORE_PROFILER_PROFILE(INST(x_sleep), { // SLEEP -- 1001 0101 1000 1000
 					STATE("sleep\n");
 					/* Don't sleep if there are interrupts about to be serviced.
@@ -931,10 +936,10 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 					STATE("spm\n");
 					avr_ioctl(avr, AVR_IOCTL_FLASH_SPM, 0);
 				}	break;
-				case 0x9409:   // IJMP -- Indirect jump -- 1001 0100 0000 1001
-				case 0x9419:   // EIJMP -- Indirect jump -- 1001 0100 0001 1001   bit 4 is "indirect"
-				case 0x9509:   // ICALL -- Indirect Call to Subroutine -- 1001 0101 0000 1001
-				case 0x9519: { // EICALL -- Indirect Call to Subroutine -- 1001 0101 0001 1001   bit 8 is "push pc"
+				case 0x9409: AVR_FAST_CORE_PROFILER_PROFILE_CASE(INST(x_ijmp))  // IJMP -- Indirect jump -- 1001 0100 0000 1001
+				case 0x9419: AVR_FAST_CORE_PROFILER_PROFILE_CASE(INST(x_eind_eijmp))  // EIJMP -- Indirect jump -- 1001 0100 0001 1001   bit 4 is "indirect"
+				case 0x9509: AVR_FAST_CORE_PROFILER_PROFILE_CASE(INST(x_icall))  // ICALL -- Indirect Call to Subroutine -- 1001 0101 0000 1001
+				case 0x9519: AVR_FAST_CORE_PROFILER_PROFILE_CASE(INST(x_eind_eicall)) { // EICALL -- Indirect Call to Subroutine -- 1001 0101 0001 1001   bit 8 is "push pc"
 					int e = opcode & 0x10;
 					int p = opcode & 0x100;
 					if (e && !avr->eind)
@@ -948,9 +953,9 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 					new_pc = z << 1;
 					cycle++;
 					TRACE_JUMP();
-				}	break;
-				case 0x9518: 	// RETI -- Return from Interrupt -- 1001 0101 0001 1000
-				case 0x9508: {	// RET -- Return -- 1001 0101 0000 1000
+				} AVR_FAST_CORE_PROFILER_PROFILE_ESAC	break;
+				case 0x9518: AVR_FAST_CORE_PROFILER_PROFILE_CASE(INST(x_reti)) 	// RETI -- Return from Interrupt -- 1001 0101 0001 1000
+				case 0x9508: AVR_FAST_CORE_PROFILER_PROFILE_CASE(INST(x_ret)) {	// RET -- Return -- 1001 0101 0000 1000
 					new_pc = _avr_pop_addr(avr);
 					cycle += 1 + avr->address_size;
 					if (opcode & 0x10)	// reti
@@ -958,7 +963,7 @@ avr_flashaddr_t avr_run_one(avr_t * avr)
 					STATE("ret%s\n", opcode & 0x10 ? "i" : "");
 					TRACE_JUMP();
 					STACK_FRAME_POP();
-				}	break;
+				} AVR_FAST_CORE_PROFILER_PROFILE_ESAC	break;
 				case 0x95c8: AVR_FAST_CORE_PROFILER_PROFILE(INST(d5_lpm_z), {	// LPM -- Load Program Memory R0 <- (Z) -- 1001 0101 1100 1000
 					uint16_t z = avr->data[R_ZL] | (avr->data[R_ZH] << 8);
 					STATE("lpm %s, (Z[%04x])\n", avr_regname(0), z);
@@ -1418,6 +1423,14 @@ AVR_FAST_CORE_PROFILER_PROFILE_STOP(INST(b3o7_brxx));
 
 	}
 	avr->cycle += cycle;
+	AVR_FAST_CORE_PROFILER_PROFILE_STOP(core_run_one);
+	
+	avr->run_cycle_count -= cycle;
+	if(avr->run_cycle_count) {
+		avr->pc = new_pc;
+		goto run_one_again;
+	}
+	
 	return new_pc;
 }
 

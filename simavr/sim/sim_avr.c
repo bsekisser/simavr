@@ -335,7 +335,7 @@ void avr_callback_run_raw(avr_t * avr)
 
 	avr->pc = new_pc;
 
-	if (avr->state == cpu_Sleeping) {
+	if (avr->state == cpu_Sleeping) AVR_FAST_CORE_PROFILER_PROFILE(sleep, {
 		if (!avr->sreg[S_I]) {
 			if (avr->log)
 				AVR_LOG(avr, LOG_TRACE, "simavr: sleeping with interrupts off, quitting gracefully\n");
@@ -347,7 +347,8 @@ void avr_callback_run_raw(avr_t * avr)
 		 */
 		avr->sleep(avr, sleep);
 		avr->cycle += 1 + sleep;
-	}
+	})
+	
 	// Interrupt servicing might change the PC too, during 'sleep'
 	if (avr->state == cpu_Running || avr->state == cpu_Sleeping) {
 		AVR_FAST_CORE_PROFILER_PROFILE(isr, avr_service_interrupts(avr));
@@ -362,13 +363,15 @@ void avr_callback_run_raw_many(avr_t * avr)
 
 //	printf("%s: [S_I]=%1d(%1d), avr->cycle = %016llu, count = %08lld pc=%06x state=%02d\n", __FUNCTION__, avr->sreg[S_I], avr->i_shadow, avr->cycle, count, avr->pc, avr->state);
 
-	while ((count > 0) && (avr->state == cpu_Running) && (avr->sreg[S_I] == avr->i_shadow)) {
+	while ((count > 0) && (avr->state == cpu_Running)) {
 			count--;
 			avr->pc = new_pc;
 			new_pc = avr_run_one(avr);
 #if CONFIG_SIMAVR_TRACE
 		avr_dump_state(avr);
 #endif
+		if(avr->sreg[S_I] != avr->i_shadow)
+			break;
 	}
 
 //	if(!avr->sreg[S_I] && cpu_Sleeping == avr->state)
@@ -392,7 +395,7 @@ void avr_callback_run_raw_many(avr_t * avr)
 	
 	avr->pc = new_pc;
 
-	if (avr->state == cpu_Sleeping) {
+	if (avr->state == cpu_Sleeping) AVR_FAST_CORE_PROFILER_PROFILE(sleep, {
 		if (!avr->sreg[S_I]) {
 			if (avr->log)
 				AVR_LOG(avr, LOG_TRACE, "simavr: sleeping with interrupts off, quitting gracefully\n");
@@ -405,7 +408,8 @@ void avr_callback_run_raw_many(avr_t * avr)
 		 */
 		avr->sleep(avr, sleep);
 		avr->cycle += 1 + sleep;
-	}
+	})
+	
 	// Interrupt servicing might change the PC too, during 'sleep'
 	if (avr->state == cpu_Running || avr->state == cpu_Sleeping) {
 		AVR_FAST_CORE_PROFILER_PROFILE(isr, avr_service_interrupts(avr));
@@ -481,7 +485,7 @@ interrupts_enabled:
 
 int avr_run(avr_t * avr)
 {
-	AVR_FAST_CORE_PROFILER_PROFILE(core_loop, avr->run(avr));
+	AVR_FAST_CORE_PROFILER_PROFILE(core_run_callback, avr->run(avr));
 	return avr->state;
 }
 
