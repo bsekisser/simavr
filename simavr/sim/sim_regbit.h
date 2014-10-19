@@ -126,6 +126,18 @@ static inline uint8_t avr_regbit_get_array(avr_t * avr, avr_regbit_t *rb, int co
 	return res;
 }
 
+/*
+ * Does the reverse of _avr_regbit_get_array
+ */
+static inline void avr_regbit_set_array(avr_t * avr, avr_regbit_t * rb, int count, uint8_t value)
+{
+	int i;
+	for (i = 0; i < count; i++, rb++) if(rb->reg) {
+		uint8_t rbv = (value >> (count - i)) & 1;
+		avr_regbit_setto(avr, *rb, rbv);
+	}
+}
+
 #define AVR_IO_REGBIT(_io, _bit) { . reg = (_io), .bit = (_bit), .mask = 1 }
 #define AVR_IO_REGBITS(_io, _bit, _mask) { . reg = (_io), .bit = (_bit), .mask = (_mask) }
 

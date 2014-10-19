@@ -41,6 +41,12 @@ typedef struct avr_watchdog_t {
 	avr_int_vector_t watchdog;	// watchdog interrupt
 
 	avr_cycle_count_t	cycle_count;
+
+	struct {
+		int	wdrf;
+		int	wdp;
+		void	*avr_run;
+	}after_reset;
 } avr_watchdog_t;
 
 /* takes no parameter */

@@ -24,18 +24,40 @@
 #include <stdlib.h>
 #include "avr_watchdog.h"
 
+static void avr_watchdog_run_callback_software_reset(avr_t * avr)
+{
+	avr_reset(avr);
+}
+
 static avr_cycle_count_t avr_watchdog_timer(struct avr_t * avr, avr_cycle_count_t when, void * param)
 {
 	avr_watchdog_t * p = (avr_watchdog_t *)param;
 
-	AVR_LOG(avr, LOG_TRACE, "WATCHDOG: timer fired.\n");
-	avr_raise_interrupt(avr, &p->watchdog);
+	int wde = avr_regbit_get(avr, p->wde);
+	int wdie = avr_regbit_get(avr, p->watchdog.enable);
+	int wdif = avr_regbit_get(avr, p->watchdog.raised);
 
-	if (!avr_regbit_get(avr, p->watchdog.enable)) {
-		AVR_LOG(avr, LOG_ERROR, "WATCHDOG: timer fired and interrupt is not enabled. Quitting\n");
-		avr_sadly_crashed(avr, 10);
+	if (wde && !wdie && wdif) {
+		AVR_LOG(avr, LOG_TRACE, "WATCHDOG: timer fired twice without being cleared. Resetting\n");
+		p->after_reset.avr_run = avr->run;
+		p->after_reset.wdrf = 1;
+
+		/* Ideally we would perform a reset here via 'avr_reset'
+		 * However, returning after reset would result in an unconsistent state.
+		 * It seems our best (and cleanest) solution is to set a temporary call 
+		 * back which can safely perform the reset for us...  During reset,
+		 * the previous callback can be restored and safely resume.
+		 */
+		avr->run = avr_watchdog_run_callback_software_reset;
+	} else {
+		
+		AVR_LOG(avr, LOG_TRACE, "WATCHDOG: timer fired.\n");
+		avr_raise_interrupt(avr, &p->watchdog);
+		if (wde) {
+			return(when + p->cycle_count);
+		}
 	}
-
+	
 	return 0;
 }
 
@@ -44,6 +66,20 @@ static avr_cycle_count_t avr_wdce_clear(struct avr_t * avr, avr_cycle_count_t wh
 	avr_watchdog_t * p = (avr_watchdog_t *)param;
 	avr_regbit_clear(p->io.avr, p->wdce);
 	return 0;
+}
+
+static void avr_watchdog_set_cycle_count_and_timer(avr_t * avr, avr_watchdog_t * p, uint8_t wdp)
+{
+	p->cycle_count = 2048 << wdp;
+	p->cycle_count = (p->cycle_count * avr->frequency) / 128000;
+	if (avr_regbit_get(avr, p->wde) || avr_regbit_get(avr, p->watchdog.enable)) {
+		AVR_LOG(avr, LOG_TRACE, "WATCHDOG: reset to %d cycles @ 128kz (* %d) = %d CPU cycles)\n",
+				2048 << wdp, 1 << wdp, (int)p->cycle_count);
+		avr_cycle_timer_register(avr, p->cycle_count, avr_watchdog_timer, p);
+	} else {
+		AVR_LOG(avr, LOG_TRACE, "WATCHDOG: disabled\n");
+		avr_cycle_timer_cancel(avr, avr_watchdog_timer, p);
+	}
 }
 
 static void avr_watchdog_write(avr_t * avr, avr_io_addr_t addr, uint8_t v, void * param)
@@ -68,16 +104,9 @@ static void avr_watchdog_write(avr_t * avr, avr_io_addr_t addr, uint8_t v, void 
 			avr_cycle_timer_register(avr, 4, avr_wdce_clear, p);
 
 		uint8_t wdp = avr_regbit_get_array(avr, p->wdp, 4);
-		p->cycle_count = 2048 << wdp;
-		p->cycle_count = (p->cycle_count * avr->frequency) / 128000;
-		if (avr_regbit_get(avr, p->wde)) {
-			AVR_LOG(avr, LOG_TRACE, "WATCHDOG: reset to %d cycles @ 128kz (* %d) = %d CPU cycles)\n",
-					2048 << wdp, 1 << wdp, (int)p->cycle_count);
-			avr_cycle_timer_register(avr, p->cycle_count, avr_watchdog_timer, p);
-		} else {
-			AVR_LOG(avr, LOG_TRACE, "WATCHDOG: disabled\n");
-			avr_cycle_timer_cancel(avr, avr_watchdog_timer, p);
-		}
+		p->after_reset.wdp = wdp;
+		
+		avr_watchdog_set_cycle_count_and_timer(avr, p, wdp);
 	} else {
 		// reset old values
 		avr_regbit_setto(avr, p->wde, wde_o);
@@ -107,8 +136,20 @@ static int avr_watchdog_ioctl(struct avr_io_t * port, uint32_t ctl, void * io_pa
 
 static void avr_watchdog_reset(avr_io_t * port)
 {
-//	avr_watchdog_t * p = (avr_watchdog_t *)port;
+	avr_watchdog_t * p = (avr_watchdog_t *)port;
+	avr_t * avr = p->io.avr;
 
+	if (p->after_reset.wdrf) {
+		/*  if watchdog reset kicked, then watchdog is enabled 
+		 * and must be set back up */
+
+		avr->run = p->after_reset.avr_run;
+
+		avr_regbit_set(avr, p->wde);
+		avr_regbit_set(avr, p->wdrf);
+		avr_regbit_set_array(avr, p->wdp, 4, p->after_reset.wdp);
+		avr_watchdog_set_cycle_count_and_timer(avr, p, p->after_reset.wdp);
+	}
 }
 
 static	avr_io_t	_io = {
@@ -125,5 +166,8 @@ void avr_watchdog_init(avr_t * avr, avr_watchdog_t * p)
 	avr_register_vector(avr, &p->watchdog);
 
 	avr_register_io_write(avr, p->wdce.reg, avr_watchdog_write, p);
+
+	p->after_reset.wdrf = 0;
+	p->after_reset.wdp = 0;
 }
 

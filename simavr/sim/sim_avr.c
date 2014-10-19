@@ -263,6 +263,7 @@ void avr_callback_run_gdb(avr_t * avr)
 		avr_dump_state(avr);
 #endif
 	}
+	avr->pc = new_pc;
 
 	// if we just re-enabled the interrupts...
 	// double buffer the I flag, to detect that edge
@@ -273,8 +274,6 @@ void avr_callback_run_gdb(avr_t * avr)
 	// run the cycle timers, get the suggested sleep time
 	// until the next timer is due
 	avr_cycle_count_t sleep = avr_cycle_timer_process(avr);
-
-	avr->pc = new_pc;
 
 	if (avr->state == cpu_Sleeping) {
 		if (!avr->sreg[S_I]) {
@@ -317,6 +316,7 @@ void avr_callback_run_raw(avr_t * avr)
 		avr_dump_state(avr);
 #endif
 	}
+	avr->pc = new_pc;
 
 	// if we just re-enabled the interrupts...
 	// double buffer the I flag, to detect that edge
@@ -327,8 +327,6 @@ void avr_callback_run_raw(avr_t * avr)
 	// run the cycle timers, get the suggested sleep time
 	// until the next timer is due
 	avr_cycle_count_t sleep = avr_cycle_timer_process(avr);
-
-	avr->pc = new_pc;
 
 	if (avr->state == cpu_Sleeping) {
 		if (!avr->sreg[S_I]) {
