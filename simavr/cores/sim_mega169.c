@@ -29,6 +29,9 @@ void m169p_reset(struct avr_t * avr);
 #define MCUCSR MCUSR
 #endif
 
+#define		PCICR		EIMSK
+#define		PCIFR		EIFR
+
 const struct mcu_t {
 	avr_t          core;
 	avr_eeprom_t 	eeprom;
@@ -56,27 +59,11 @@ const struct mcu_t {
 		AVR_EXTINT_DECLARE(0, 'D', PD1),
 	},
 	AVR_IOPORT_DECLARE(a, 'A', A),
-	.portb = {
-		.name = 'B', .r_port = PORTB, .r_ddr = DDRB, .r_pin = PINB,  .r_pcint = PCMSK1,
-		.pcint = {
-			.enable = AVR_IO_REGBIT(EIMSK, PCIE1),
-			.raised = AVR_IO_REGBIT(EIFR, PCIF1),
-			.vector = PCINT1_vect,
-		},
-	},
+	AVR_IOPORT_PCINT_DECLARE(b, 'B', B, 1),
 	AVR_IOPORT_DECLARE(c, 'C', C),
 	AVR_IOPORT_DECLARE(d, 'D', D),
-	.porte = {
-		.name = 'E', .r_port = PORTE, .r_ddr = DDRE, .r_pin = PINE, .r_pcint = PCMSK0,
-		.pcint = {
-			.enable = AVR_IO_REGBIT(EIMSK, PCIE0),
-			.raised = AVR_IO_REGBIT(EIFR, PCIF0),
-			.vector = PCINT0_vect,
-		},
-	},
 	AVR_IOPORT_DECLARE(f, 'F', F),
 	AVR_IOPORT_DECLARE(g, 'G', G),
-
 	.uart0 = {
 		.name = '0',
 		.r_udr = UDR0,

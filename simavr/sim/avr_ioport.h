@@ -123,6 +123,17 @@ void avr_ioport_init(avr_t * avr, avr_ioport_t * port);
 		.name = _cname, .r_port = PORT ## _uname, .r_ddr = DDR ## _uname, .r_pin = PIN ## _uname, \
 	}
 
+#define AVR_IOPORT_PCINT_DECLARE(_lname, _cname, _uname, _num) \
+	.port ## _lname = { \
+		.name = _cname, .r_port = PORT ## _uname, .r_ddr = DDR ## _uname, .r_pin = PIN ## _uname, \
+		.pcint = { \
+			.enable = AVR_IO_REGBIT(PCICR, PCIE ## _num), \
+			.raised = AVR_IO_REGBIT(PCIFR, PCIF ## _num), \
+			.vector = PCINT ## _num ## _vect, \
+		}, \
+		.r_pcint = PCMSK ## _num, \
+	}
+
 #ifdef __cplusplus
 };
 #endif

@@ -89,34 +89,9 @@ const struct mcu_t SIM_CORENAME = {
 		AVR_EXTINT_DECLARE(0, 'D', 2),
 		AVR_EXTINT_DECLARE(1, 'D', 3),
 	},
-	.portb = {
-		.name = 'B', .r_port = PORTB, .r_ddr = DDRB, .r_pin = PINB,
-		.pcint = {
-			.enable = AVR_IO_REGBIT(PCICR, PCIE0),
-			.raised = AVR_IO_REGBIT(PCIFR, PCIF0),
-			.vector = PCINT0_vect,
-		},
-		.r_pcint = PCMSK0,
-	},
-	.portc = {
-		.name = 'C', .r_port = PORTC, .r_ddr = DDRC, .r_pin = PINC,
-		.pcint = {
-			.enable = AVR_IO_REGBIT(PCICR, PCIE1),
-			.raised = AVR_IO_REGBIT(PCIFR, PCIF1),
-			.vector = PCINT1_vect,
-		},
-		.r_pcint = PCMSK1,
-	},
-	.portd = {
-		.name = 'D', .r_port = PORTD, .r_ddr = DDRD, .r_pin = PIND,
-		.pcint = {
-			.enable = AVR_IO_REGBIT(PCICR, PCIE2),
-			.raised = AVR_IO_REGBIT(PCIFR, PCIF2),
-			.vector = PCINT2_vect,
-		},
-		.r_pcint = PCMSK2,
-	},
-
+	AVR_IOPORT_PCINT_DECLARE(b, 'B', B, 0),
+	AVR_IOPORT_PCINT_DECLARE(c, 'C', C, 1),
+	AVR_IOPORT_PCINT_DECLARE(d, 'd', d, 2),
 	.uart = {
 		.disabled = AVR_IO_REGBIT(PRR,PRUSART0),
 		.name = '0',
