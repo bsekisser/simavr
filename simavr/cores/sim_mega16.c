@@ -29,7 +29,7 @@
 
 #define ICP_PORT	PORTD
 #define ICP_PIN		6
-	
+
 #define _AVR_IO_H_
 #define __ASSEMBLER__
 #include "avr/iom16.h"

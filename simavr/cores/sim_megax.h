@@ -74,6 +74,9 @@ struct mcu_t {
 #define EIMSK GICR
 #define EIFR GIFR
 
+#define		USART_RX_vect		USART_RXC_vect
+#define		USART_TX_vect		USART_TXC_vect
+
 const struct mcu_t SIM_CORENAME = {
 	.core = {
 		.mmcu = SIM_MMCU,
@@ -118,6 +121,11 @@ const struct mcu_t SIM_CORENAME = {
 		.r_ucsrc = UCSRC,
 		.r_ubrrl = UBRRL,
 		.r_ubrrh = UBRRH,
+#if 1
+		AVR_UART_RX_INTERRUPT_DECLARE(),
+		AVR_UART_TX_INTERRUPT_DECLARE(),
+		AVR_UART_UDR_INTERRUPT_DECLARE(),
+#else
 		.rxc = {
 			.enable = AVR_IO_REGBIT(UCSRB, RXCIE),
 			.raised = AVR_IO_REGBIT(UCSRA, RXC),
@@ -133,6 +141,7 @@ const struct mcu_t SIM_CORENAME = {
 			.raised = AVR_IO_REGBIT(UCSRA, UDRE),
 			.vector = USART_UDRE_vect,
 		},
+#endif
 	},
 	.adc = {
 		.r_admux = ADMUX,

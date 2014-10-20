@@ -90,6 +90,11 @@ static const struct mcu_t {
 		.r_ucsrc = UCSRC,
 		.r_ubrrl = UBRRL,
 		.r_ubrrh = UBRRH,
+#if 1
+		AVR_UART_RX_INTERRUPT_DECLARE(),
+		AVR_UART_TX_INTERRUPT_DECLARE(),
+		AVR_UART_UDR_INTERRUPT_DECLARE(),
+#else
 		.rxc = {
 			.enable = AVR_IO_REGBIT(UCSRB, RXCIE),
 			.raised = AVR_IO_REGBIT(UCSRA, RXC),
@@ -105,6 +110,7 @@ static const struct mcu_t {
 			.raised = AVR_IO_REGBIT(UCSRA, UDRE),
 			.vector = USART_UDRE_vect,
 		},
+#endif
 	},
 	.timer0 = {
 		.name = '0',

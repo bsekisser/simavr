@@ -108,21 +108,10 @@ const struct mcu_t {
 		.r_ucsrc = UCSR1C,
 		.r_ubrrl = UBRR1L,
 		.r_ubrrh = UBRR1H,
-		.rxc = {
-			.enable = AVR_IO_REGBIT(UCSR1B, RXCIE1),
-			.raised = AVR_IO_REGBIT(UCSR1A, RXC1),
-			.vector = USART1_RX_vect,
-		},
-		.txc = {
-			.enable = AVR_IO_REGBIT(UCSR1B, TXCIE1),
-			.raised = AVR_IO_REGBIT(UCSR1A, TXC1),
-			.vector = USART1_TX_vect,
-		},
-		.udrc = {
-			.enable = AVR_IO_REGBIT(UCSR1B, UDRIE1),
-			.raised = AVR_IO_REGBIT(UCSR1A, UDRE1),
-			.vector = USART1_UDRE_vect,
-		},
+
+		AVR_UART_RX_INTERRUPT_DECLARE(1),
+		AVR_UART_TX_INTERRUPT_DECLARE(1),
+		AVR_UART_UDR_INTERRUPT_DECLARE(1),
 	},
 	.timer0 = {
 		.name = '0',

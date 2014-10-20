@@ -121,6 +121,27 @@ typedef struct avr_uart_t {
 
 void avr_uart_init(avr_t * avr, avr_uart_t * port);
 
+#define AVR_UART_RX_INTERRUPT_DECLARE(_num) \
+	.rxc = { \
+		.enable = AVR_IO_REGBIT(UCSR ## _num ## B, RXCIE ## _num), \
+		.raised = AVR_IO_REGBIT(UCSR ## _num ## A, RXC ## _num), \
+		.vector = USART ## _num ## _RX_vect, \
+	}
+
+#define AVR_UART_TX_INTERRUPT_DECLARE(_num) \
+	.txc = { \
+		.enable = AVR_IO_REGBIT(UCSR ## _num ## B, TXCIE ## _num), \
+		.raised = AVR_IO_REGBIT(UCSR ## _num ## A, TXC ## _num), \
+		.vector = USART ## _num ## _TX_vect, \
+	}
+
+#define AVR_UART_UDR_INTERRUPT_DECLARE(_num) \
+	.udrc = { \
+		.enable = AVR_IO_REGBIT(UCSR ## _num ## B, UDRIE ## _num), \
+		.raised = AVR_IO_REGBIT(UCSR ## _num ## A, UDRE ## _num), \
+		.vector = USART ## _num ## _UDRE_vect, \
+	}
+
 #ifdef __cplusplus
 };
 #endif

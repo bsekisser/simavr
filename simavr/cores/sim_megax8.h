@@ -70,6 +70,10 @@ struct mcu_t {
 #define EFUSE_DEFAULT 0
 #endif
 
+#define		USART0_RX_vect		USART_RX_vect
+#define		USART0_TX_vect		USART_TX_vect
+#define		USART0_UDRE_vect	USART_UDRE_vect
+
 const struct mcu_t SIM_CORENAME = {
 	.core = {
 		.mmcu = SIM_MMCU,
@@ -133,21 +137,10 @@ const struct mcu_t SIM_CORENAME = {
 		.r_ucsrc = UCSR0C,
 		.r_ubrrl = UBRR0L,
 		.r_ubrrh = UBRR0H,
-		.rxc = {
-			.enable = AVR_IO_REGBIT(UCSR0B, RXCIE0),
-			.raised = AVR_IO_REGBIT(UCSR0A, RXC0),
-			.vector = USART_RX_vect,
-		},
-		.txc = {
-			.enable = AVR_IO_REGBIT(UCSR0B, TXCIE0),
-			.raised = AVR_IO_REGBIT(UCSR0A, TXC0),
-			.vector = USART_TX_vect,
-		},
-		.udrc = {
-			.enable = AVR_IO_REGBIT(UCSR0B, UDRIE0),
-			.raised = AVR_IO_REGBIT(UCSR0A, UDRE0),
-			.vector = USART_UDRE_vect,
-		},
+
+		AVR_UART_RX_INTERRUPT_DECLARE(0),
+		AVR_UART_TX_INTERRUPT_DECLARE(0),
+		AVR_UART_UDR_INTERRUPT_DECLARE(0),
 	},
 	.adc = {
 		.r_admux = ADMUX,
