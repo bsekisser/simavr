@@ -100,12 +100,20 @@ avr_raise_interrupt(
 		avr_t * avr,
 		avr_int_vector_t * vector)
 {
-	if (!vector || !vector->vector)
+	if (!vector) {
+		printf("%s: no vector\n", __FUNCTION__);
 		return 0;
+	}
+	
+	if (!vector->vector) {
+		printf("%s: no vector->vector\n", __FUNCTION__);
+		return 0;
+	}
+	
 	if (vector->trace)
 		printf("%s raising %d (enabled %d)\n", __FUNCTION__, vector->vector, avr_regbit_get(avr, vector->enable));
 	if (vector->pending) {
-		if (vector->trace)
+//		if (vector->trace)
 			printf("%s trying to double raise %d (enabled %d)\n", __FUNCTION__, vector->vector, avr_regbit_get(avr, vector->enable));
 		return 0;
 	}
@@ -130,7 +138,7 @@ avr_raise_interrupt(
 		if (!table->pending_wait)
 			table->pending_wait = 1;		// latency on interrupts ??
 		if (avr->state == cpu_Sleeping) {
-			if (vector->trace)
+//			if (vector->trace)
 				printf("Waking CPU due to interrupt\n");
 			avr->state = cpu_Running;	// in case we were sleeping
 		}
@@ -191,7 +199,7 @@ avr_service_interrupts(
 	if (!avr->sreg[S_I])
 		return;
 
-	if (!avr_has_pending_interrupts(avr))
+	if (!avr->i_shadow)
 		return;
 
 	avr_int_table_p table = &avr->interrupts;
@@ -202,6 +210,9 @@ avr_service_interrupts(
 	}
 	table->pending_wait--;
 	if (table->pending_wait)
+		return;
+
+	if (!avr_has_pending_interrupts(avr))
 		return;
 
 	// how many are pending...

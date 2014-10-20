@@ -88,6 +88,14 @@ static inline uint8_t avr_regbit_get(avr_t * avr, avr_regbit_t rb)
 	return (avr->data[a] >> rb.bit) & rb.mask;
 }
 
+static inline uint8_t avr_regbit_get_value(avr_t * avr, avr_regbit_t rb, uint8_t value)
+{
+	uint8_t a = rb.reg;
+	if (!a)
+		return 0;
+	return (value >> rb.bit) & rb.mask;
+}
+
 /*
  * Return the bit(s) 'in position' instead of zero based
  */
