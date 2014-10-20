@@ -353,34 +353,7 @@ const struct mcu_t SIM_CORENAME = {
 			.vector = SPI_STC_vect,
 		},
 	},
-
-	.twi = {
-		.disabled = AVR_IO_REGBIT(PRR,PRTWI),
-
-		.r_twcr = TWCR,
-		.r_twsr = TWSR,
-		.r_twbr = TWBR,
-		.r_twdr = TWDR,
-		.r_twar = TWAR,
-		.r_twamr = TWAMR,
-
-		.twen = AVR_IO_REGBIT(TWCR, TWEN),
-		.twea = AVR_IO_REGBIT(TWCR, TWEA),
-		.twsta = AVR_IO_REGBIT(TWCR, TWSTA),
-		.twsto = AVR_IO_REGBIT(TWCR, TWSTO),
-		.twwc = AVR_IO_REGBIT(TWCR, TWWC),
-
-		.twsr = AVR_IO_REGBITS(TWSR, TWS3, 0x1f),	// 5 bits
-		.twps = AVR_IO_REGBITS(TWSR, TWPS0, 0x3),	// 2 bits
-
-		.twi = {
-			.enable = AVR_IO_REGBIT(TWCR, TWIE),
-			.raised = AVR_IO_REGBIT(TWCR, TWINT),
-			.raise_sticky = 1,
-			.vector = TWI_vect,
-		},
-	},
-	
+	AVR_TWI_DECLARE(PRR, PRTWI),
 };
 #endif /* SIM_CORENAME */
 

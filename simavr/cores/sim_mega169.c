@@ -336,7 +336,7 @@ const struct mcu_t {
 			.vector = SPI_STC_vect,
 		},
 	},
-
+	/* FIXME: missing twi record? */
 };
 
 static avr_t * make()
