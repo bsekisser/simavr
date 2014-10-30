@@ -162,6 +162,11 @@ typedef struct avr_t {
 	// like, sleeping.
 	avr_cycle_count_t	cycle;		// current cycle
 
+	// these next two allow the core to freely run between cycle timers and also allows
+	// for a maximum run cycle limit... run_cycle_count is set during cycle timer processing.
+	avr_cycle_count_t	run_cycle_count;	// cycles to run before next timer
+	avr_cycle_count_t	run_cycle_limit;	// maximum run cycle interval limit
+
 	/**
 	 * Sleep requests are accumulated in sleep_usec until the minimum sleep value
 	 * is reached, at which point sleep_usec is cleared and the sleep request
@@ -205,7 +210,12 @@ typedef struct avr_t {
 	// in the opcode decoder.
 	// This array is re-synthesized back/forth when SREG changes
 	uint8_t		sreg[8];
-	uint8_t		i_shadow;	// used to detect edges on I flag
+
+	/* Interrupt state:
+		00: idle (no wait, no pending interrupts) or disabled
+		<0: wait till zero
+		>0: interrupt pending */
+	int8_t		interrupt_state;	// interrupt state
 
 	/* 
 	 * ** current PC **

@@ -86,7 +86,7 @@ int donttrace = 0;
 	for (int _sbi = 0; _sbi < 8; _sbi++)\
 		printf("%c", avr->sreg[_sbi] ? toupper(_sreg_bit_name[_sbi]) : '.');\
 	printf("\n");\
-}
+	}
 
 void crash(avr_t* avr)
 {
@@ -177,7 +177,7 @@ static inline void _avr_set_r(avr_t * avr, uint8_t r, uint8_t v)
 		SREG();
 	})
 	
-	if (r > 31) {
+	else if (r > 31) {
 		uint8_t io = AVR_DATA_TO_IO(r);
 		
 		if (avr->io[io].w.c) AVR_FAST_CORE_PROFILER_PROFILE(iow_wc, {
@@ -220,12 +220,9 @@ static inline void _avr_set_ram(avr_t * avr, uint16_t addr, uint8_t v)
 		avr_core_watch_write(avr, addr, v);
 }
 
-/*
- * Get a value from SRAM.
- */
-static inline uint8_t _avr_get_ram(avr_t * avr, uint16_t addr)
+
+static inline uint8_t _avr_get_r(avr_t * avr, uint16_t addr)
 {
-AVR_FAST_CORE_PROFILER_PROFILE_START(ior);
 	if (addr == R_SREG) AVR_FAST_CORE_PROFILER_PROFILE(ior_sreg, {
 		/*
 		 * SREG is special it's reconstructed when read
@@ -247,8 +244,23 @@ AVR_FAST_CORE_PROFILER_PROFILE_START(ior);
 				avr_raise_irq(avr->io[io].irq + i, (v >> i) & 1);				
 		})
 	}
-AVR_FAST_CORE_PROFILER_PROFILE_STOP(ior);
+
 	return avr_core_watch_read(avr, addr);
+}
+
+/*
+ * Get a value from SRAM.
+ */
+static inline uint8_t _avr_get_ram(avr_t * avr, uint16_t addr)
+{
+	uint8_t data;
+	
+	if (addr < 256) {
+		AVR_FAST_CORE_PROFILER_PROFILE(ior, data = _avr_get_r(avr, addr));
+	} else
+		data = avr_core_watch_read(avr, addr);
+	
+	return(data);
 }
 
 /*
@@ -595,7 +607,6 @@ static inline int _avr_is_instruction_32_bits(avr_t * avr, avr_flashaddr_t pc)
 avr_flashaddr_t avr_run_one(avr_t * avr)
 {
 run_one_again:
-	AVR_FAST_CORE_PROFILER_PROFILE_START(core_run_one);
 #if CONFIG_SIMAVR_TRACE
 	/*
 	 * this traces spurious reset or bad jumps
@@ -903,7 +914,7 @@ run_one_again:
 			if ((opcode & 0xff0f) == 0x9408) {
 				get_sreg_bit(opcode);
 				STATE("%s%c\n", opcode & 0x0080 ? "cl" : "se", _sreg_bit_name[b]);
-				avr->sreg[b] = (opcode & 0x0080) == 0;
+				avr_sreg_set(avr, b, (opcode & 0x0080) == 0);
 				SREG();
 			} else 
 #endif
@@ -959,7 +970,7 @@ run_one_again:
 					new_pc = _avr_pop_addr(avr);
 					cycle += 1 + avr->address_size;
 					if (opcode & 0x10)	// reti
-						avr->sreg[S_I] = 1;
+						avr_sreg_set(avr, S_I, 1);
 					STATE("ret%s\n", opcode & 0x10 ? "i" : "");
 					TRACE_JUMP();
 					STACK_FRAME_POP();
@@ -1423,11 +1434,16 @@ AVR_FAST_CORE_PROFILER_PROFILE_STOP(INST(b3o7_brxx));
 
 	}
 	avr->cycle += cycle;
-	AVR_FAST_CORE_PROFILER_PROFILE_STOP(core_run_one);
-	
-	avr->run_cycle_count -= cycle;
-	if(avr->run_cycle_count) {
+
+	if ((avr->state == cpu_Running) && 
+		(avr->run_cycle_count > cycle) && 
+		(avr->interrupt_state == 0))
+	{
+		avr->run_cycle_count -= cycle;
 		avr->pc = new_pc;
+		
+		AVR_FAST_CORE_PROFILER_PROFILE_COUNT_1(core_run_one)
+		
 		goto run_one_again;
 	}
 	
