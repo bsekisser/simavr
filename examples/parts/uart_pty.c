@@ -70,7 +70,7 @@ static void
 uart_pty_flush_incoming(
 		uart_pty_t * p)
 {
-	while (p->xon && !uart_pty_fifo_isempty(&p->pty.out)) {
+	while (!p->xoff && !uart_pty_fifo_isempty(&p->pty.out)) {
 		TRACE(int r = p->pty.out.read;)
 		uint8_t byte = uart_pty_fifo_read(&p->pty.out);
 		TRACE(printf("uart_pty_flush_incoming send r %03d:%02x\n", r, byte);)
@@ -83,7 +83,7 @@ uart_pty_flush_incoming(
 		}
 	}
 	if (p->tap.s) {
-		while (p->xon && !uart_pty_fifo_isempty(&p->tap.out)) {
+		while (!p->xoff && !uart_pty_fifo_isempty(&p->tap.out)) {
 			uint8_t byte = uart_pty_fifo_read(&p->tap.out);
 			if (p->tap.crlf && byte == '\r') {
 				uart_pty_fifo_write(&p->tap.in, '\n');
@@ -123,7 +123,11 @@ uart_pty_xoff_hook(
 {
 	uart_pty_t * p = (uart_pty_t*)param;
 	TRACE(if (p->xon) printf("uart_pty_xoff_hook\n");)
+	p->xoff = value;
 	p->xon = 0;
+	
+	if (!p->xoff)
+		uart_pty_flush_incoming(p);
 }
 
 static void *
@@ -172,8 +176,11 @@ uart_pty_thread(
 						!uart_pty_fifo_isfull(&p->port[ti].out)) {
 					int index = p->port[ti].buffer_done++;
 					TRACE(int wi = p->port[ti].out.write;)
-					uart_pty_fifo_write(&p->port[ti].out,
-							p->port[ti].buffer[index]);
+					uint8_t byte = p->port[ti].buffer[index];
+					if (!p->xoff && uart_pty_fifo_isempty(&p->pty.out))
+						avr_raise_irq(p->irq + IRQ_UART_PTY_BYTE_OUT, byte);
+					else
+						uart_pty_fifo_write(&p->port[ti].out, byte);
 					TRACE(printf("w %3d:%02x\n", wi, p->port[ti].buffer[index]);)
 				}
 			}
