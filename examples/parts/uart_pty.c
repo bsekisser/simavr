@@ -176,11 +176,7 @@ uart_pty_thread(
 						!uart_pty_fifo_isfull(&p->port[ti].out)) {
 					int index = p->port[ti].buffer_done++;
 					TRACE(int wi = p->port[ti].out.write;)
-					uint8_t byte = p->port[ti].buffer[index];
-					if (!p->xoff && uart_pty_fifo_isempty(&p->pty.out))
-						avr_raise_irq(p->irq + IRQ_UART_PTY_BYTE_OUT, byte);
-					else
-						uart_pty_fifo_write(&p->port[ti].out, byte);
+					uart_pty_fifo_write(&p->port[ti].out, p->port[ti].buffer[index]);
 					TRACE(printf("w %3d:%02x\n", wi, p->port[ti].buffer[index]);)
 				}
 			}
@@ -208,6 +204,20 @@ static const char * irq_names[IRQ_UART_PTY_COUNT] = {
 	[IRQ_UART_PTY_BYTE_IN] = "8<uart_pty.in",
 	[IRQ_UART_PTY_BYTE_OUT] = "8>uart_pty.out",
 };
+
+void
+uart_pty_pump(uart_pty_t * p)
+{
+	while (!p->xoff && !uart_pty_fifo_isempty(&p->tap.out)) {
+		uint8_t byte = uart_pty_fifo_read(&p->tap.out);
+		if (p->tap.crlf && byte == '\r') {
+			uart_pty_fifo_write(&p->tap.in, '\n');
+		}
+		if (byte == '\n')
+			continue;
+		avr_raise_irq(p->irq + IRQ_UART_PTY_BYTE_OUT, byte);
+	}
+}
 
 void
 uart_pty_init(
