@@ -37,6 +37,7 @@
 #include <stdlib.h>
 #include "avr_uart.h"
 #include "sim_hex.h"
+#include "sim_time.h"
 
 //#define TRACE(_w) _w
 #ifndef TRACE
@@ -44,6 +45,17 @@
 #endif
 
 DEFINE_FIFO(uint8_t, uart_fifo);
+
+static avr_cycle_count_t avr_uart_periodic_xon(struct avr_t * avr, avr_cycle_count_t when, void * param)
+{
+	avr_uart_t * p = (avr_uart_t *)param;
+	// if reception is idle and the fifo is empty, tell whomever there is room
+	if (avr_regbit_get(avr, p->rxen) && uart_fifo_isempty(&p->input)) {
+		avr_raise_irq(p->io.irq + UART_IRQ_OUT_XOFF, 0);
+		avr_raise_irq(p->io.irq + UART_IRQ_OUT_XON, 1);
+	}
+	return avr_usec_to_cycles(avr, p->usec_per_byte) + when;
+}
 
 static avr_cycle_count_t avr_uart_txc_raise(struct avr_t * avr, avr_cycle_count_t when, void * param)
 {
@@ -59,6 +71,9 @@ static avr_cycle_count_t avr_uart_txc_raise(struct avr_t * avr, avr_cycle_count_
 static avr_cycle_count_t avr_uart_rxc_raise(struct avr_t * avr, avr_cycle_count_t when, void * param)
 {
 	avr_uart_t * p = (avr_uart_t *)param;
+	TRACE(p->rxc.trace = 1;)
+	TRACE(int bs = avr_regbit_get(avr, p->rxc.raised);)
+	TRACE(printf("rxc_raise, rxc %d\n", bs);)
 	if (avr_regbit_get(avr, p->rxen))
 		avr_raise_interrupt(avr, &p->rxc);
 	return 0;
@@ -100,6 +115,8 @@ static uint8_t avr_uart_read(struct avr_t * avr, avr_io_addr_t addr, void * para
 
 	// clear the rxc bit in case the code is using polling
 	avr_regbit_clear(avr, p->rxc.raised);
+	// RXC interrupt generation is controlled by the RXC bit
+	avr_clear_interrupt(avr, &p->rxc);
 
 	if (!avr_regbit_get(avr, p->rxen)) {
 		avr->data[addr] = 0;
@@ -109,14 +126,16 @@ static uint8_t avr_uart_read(struct avr_t * avr, avr_io_addr_t addr, void * para
 	}
 	uint8_t v = uart_fifo_read(&p->input);
 
-//	TRACE(printf("UART read %02x %s\n", v, uart_fifo_isempty(&p->input) ? "EMPTY!" : "");)
+//     TRACE(printf("UART read %02x %s\n", v, uart_fifo_isempty(&p->input) ? "EMPTY!" : "");)
 	avr->data[addr] = v;
 	// made to trigger potential watchpoints
 	v = avr_core_watch_read(avr, addr);
 
 	// trigger timer if more characters are pending
-	if (!uart_fifo_isempty(&p->input))
+	if (!uart_fifo_isempty(&p->input)) {
+		TRACE(printf("setting up rxc raise callback\n"));
 		avr_cycle_timer_register_usec(avr, p->usec_per_byte, avr_uart_rxc_raise, p);
+	}
 
 	return v;
 }
@@ -142,6 +161,10 @@ static void avr_uart_baud_write(struct avr_t * avr, avr_io_addr_t addr, uint8_t 
 	// TODO: Use the divider value and calculate the straight number of cycles
 	p->usec_per_byte = 1000000 / (baud / word_size);
 	AVR_LOG(avr, LOG_TRACE, "UART: Roughly %d usec per bytes\n", (int)p->usec_per_byte);
+	if (avr_regbit_get(avr, p->rxen)) {
+		avr_cycle_timer_register_usec(avr, p->usec_per_byte, avr_uart_periodic_xon, p);
+		printf("setting period xon every %d usec\n", (int)p->usec_per_byte);
+	}
 }
 
 static void avr_uart_udr_write(struct avr_t * avr, avr_io_addr_t addr, uint8_t v, void * param)
@@ -191,6 +214,15 @@ static void avr_uart_write(struct avr_t * avr, avr_io_addr_t addr, uint8_t v, vo
 			if (avr_cycle_timer_status(avr, avr_uart_txc_raise, p) == 0)
 				avr_raise_interrupt(avr, &p->udrc);
 		}
+	}
+	if (p->udrc.vector && addr == p->r_ucsrb) {
+		// TODO: switch on transition of rxen 0 -> 1?
+		if (avr_regbit_get(avr, p->rxen)) {
+			avr_cycle_timer_register_usec(avr, p->usec_per_byte, avr_uart_periodic_xon, p);
+			printf("enabling periodic xon due to ucsrb write\n");
+		}
+		else
+			avr_cycle_timer_cancel(avr, avr_uart_periodic_xon, p);
 	}
 	if (p->udrc.vector && addr == p->udrc.raised.reg) {
 		// get the bits before the write
