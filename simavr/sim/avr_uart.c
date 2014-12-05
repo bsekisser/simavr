@@ -113,8 +113,8 @@ static uint8_t avr_uart_read(struct avr_t * avr, avr_io_addr_t addr, void * para
 {
 	avr_uart_t * p = (avr_uart_t *)param;
 
-	// clear the rxc bit in case the code is using polling
-	avr_regbit_clear(avr, p->rxc.raised);
+//	// clear the rxc bit in case the code is using polling
+//	avr_regbit_clear(avr, p->rxc.raised);
 	// RXC interrupt generation is controlled by the RXC bit
 	avr_clear_interrupt(avr, &p->rxc);
 
@@ -200,6 +200,8 @@ static void avr_uart_write(struct avr_t * avr, avr_io_addr_t addr, uint8_t v, vo
 {
 	avr_uart_t * p = (avr_uart_t *)param;
 
+	uint8_t rxen = avr_regbit_get(avr, p->rxen);
+	
 	if (p->udrc.vector && addr == p->udrc.enable.reg) {
 		/*
 		 * If enabling the UDRC interrupt, raise it immediately if FIFO is empty
@@ -215,9 +217,10 @@ static void avr_uart_write(struct avr_t * avr, avr_io_addr_t addr, uint8_t v, vo
 				avr_raise_interrupt(avr, &p->udrc);
 		}
 	}
-	if (p->udrc.vector && addr == p->r_ucsrb) {
+//	if (p->udrc.vector && addr == p->r_ucsrb) {
+	if (p->rxc.vector && addr == p->rxc.enable.reg) {
 		// TODO: switch on transition of rxen 0 -> 1?
-		if (avr_regbit_get(avr, p->rxen)) {
+		if (avr_regbit_from_value(avr, p->rxen, v) && !rxen) {
 			avr_cycle_timer_register_usec(avr, p->usec_per_byte, avr_uart_periodic_xon, p);
 			printf("enabling periodic xon due to ucsrb write\n");
 		}

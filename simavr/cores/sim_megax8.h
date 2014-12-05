@@ -136,7 +136,7 @@ const struct mcu_t SIM_CORENAME = {
 		.rxc = {
 			.enable = AVR_IO_REGBIT(UCSR0B, RXCIE0),
 			.raised = AVR_IO_REGBIT(UCSR0A, RXC0),
-			.raise_sticky = 1,
+//			.raise_sticky = 1,
 			.vector = USART_RX_vect,
 		},
 		.txc = {
