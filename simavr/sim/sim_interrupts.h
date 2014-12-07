@@ -36,8 +36,7 @@ typedef struct avr_int_vector_t {
 	avr_regbit_t 	raised;			// IO register index for the register where the "raised" flag is (optional)
 
 	avr_irq_t		irq;			// raised to 1 when queued, to zero when called
-	uint8_t			pending : 1,	// 1 while scheduled in the fifo
-					trace : 1,		// only for debug of a vector
+	uint8_t			trace : 1,		// only for debug of a vector
 					raise_sticky : 1;	// 1 if the interrupt flag (= the raised regbit) is not cleared
 										// by the hardware when executing the interrupt routine (see TWINT)
 } avr_int_vector_t;
@@ -46,9 +45,7 @@ typedef struct avr_int_vector_t {
 typedef struct  avr_int_table_t {
 	avr_int_vector_t * vector[64];
 	uint8_t			vector_count;
-	avr_int_vector_t * pending[64]; // needs to be >= vectors and a power of two
-	uint8_t			pending_w,
-					pending_r;	// fifo cursors
+	uint64_t	pending;
 } avr_int_table_t, *avr_int_table_p;
 
 /*

@@ -32,6 +32,8 @@
 #define INT_FIFO_SIZE (sizeof(table->pending) / sizeof(avr_int_vector_t *))
 #define INT_FIFO_MOD(_v) ((_v) &  (INT_FIFO_SIZE - 1))
 
+#define ASSERT(value) if(value) printf(# value);
+
 void
 avr_interrupt_init(
 		avr_t * avr )
@@ -46,10 +48,8 @@ avr_interrupt_reset(
 {
 	printf("%s\n", __func__);
 	avr_int_table_p table = &avr->interrupts;
-	table->pending_r = table->pending_w = 0;
+	table->pending = 0;
 	avr->interrupt_state = 0;
-	for (int i = 0; i < table->vector_count; i++)
-		table->vector[i]->pending = 0;
 }
 
 void
@@ -63,7 +63,10 @@ avr_register_vector(
 	avr_int_table_p table = &avr->interrupts;
 
 	vector->irq.irq = vector->vector;
-	table->vector[table->vector_count++] = vector;
+
+	ASSERT(table->vector[vector->vector]);
+	table->vector[vector->vector] = vector;
+
 	if (vector->trace)
 		printf("%s register vector %d (enabled %04x:%d)\n", __FUNCTION__, vector->vector, vector->enable.reg, vector->enable.bit);
 
@@ -76,7 +79,8 @@ avr_has_pending_interrupts(
 		avr_t * avr)
 {
 	avr_int_table_p table = &avr->interrupts;
-	return table->pending_r != table->pending_w;
+
+	return 0 != table->pending;
 }
 
 int
@@ -84,7 +88,9 @@ avr_is_interrupt_pending(
 		avr_t * avr,
 		avr_int_vector_t * vector)
 {
-	return vector->pending;
+	avr_int_table_p table = &avr->interrupts;
+
+	return table->pending & (1 << vector->vector);
 }
 
 int
@@ -104,7 +110,7 @@ avr_raise_interrupt(
 		return 0;
 	if (vector->trace)
 		printf("%s raising %d (enabled %d)\n", __FUNCTION__, vector->vector, avr_regbit_get(avr, vector->enable));
-	if (vector->pending) {
+	if (avr_is_interrupt_pending(avr, vector)) {
 		if (vector->trace)
 			printf("%s trying to double raise %d (enabled %d)\n", __FUNCTION__, vector->vector, avr_regbit_get(avr, vector->enable));
 		return 0;
@@ -119,13 +125,9 @@ avr_raise_interrupt(
 
 	// If the interrupt is enabled, attempt to wake the core
 	if (avr_regbit_get(avr, vector->enable)) {
-		// Mark the interrupt as pending
-		vector->pending = 1;
-
 		avr_int_table_p table = &avr->interrupts;
 
-		table->pending[table->pending_w++] = vector;
-		table->pending_w = INT_FIFO_MOD(table->pending_w);
+		table->pending |= 1 << vector->vector;
 
 		if (avr->sreg[S_I] && avr->interrupt_state == 0)
 			avr->interrupt_state = 1;
@@ -148,7 +150,7 @@ avr_clear_interrupt(
 		return;
 	if (vector->trace)
 		printf("%s cleared %d\n", __FUNCTION__, vector->vector);
-	vector->pending = 0;
+	avr->interrupts.pending &= ~(1 << vector->vector);
 	avr_raise_irq(&vector->irq, 0);
 	if (vector->raised.reg && !vector->raise_sticky)
 		avr_regbit_clear(avr, vector->raised);
@@ -180,6 +182,20 @@ avr_get_interrupt_irq(
 	return NULL;
 }
 
+static inline uint8_t avr_ffsll(uint64_t llval)
+{
+	uint64_t vec = 1;
+	int count = 64;
+	
+	while (count--) {
+		if (llval & vec)
+			return (64 - count);
+		vec <<= 1;
+	}
+	
+	return 0;
+}
+
 /*
  * check whether interrupts are pending. If so, check if the interrupt "latency" is reached,
  * and if so triggers the handlers and jump to the vector.
@@ -203,32 +219,13 @@ avr_service_interrupts(
 
 	avr_int_table_p table = &avr->interrupts;
 
-	// how many are pending...
-	int cnt = table->pending_w > table->pending_r ?
-			table->pending_w - table->pending_r :
-			(table->pending_w + INT_FIFO_SIZE) - table->pending_r;
-	// locate the highest priority one
-	int min = 0xff;
-	int mini = 0;
-	for (int ii = 0; ii < cnt; ii++) {
-		int vi = INT_FIFO_MOD(table->pending_r + ii);
-		avr_int_vector_t * v = table->pending[vi];
-		if (v->vector < min) {
-			min = v->vector;
-			mini = vi;
-		}
-	}
-	avr_int_vector_t * vector = table->pending[mini];
+	int ivec = avr_ffsll(table->pending >> 1);
 
-	// now move the one at the front of the fifo in the slot of
-	// the one we service
-	table->pending[mini] = table->pending[table->pending_r++];
-	table->pending_r = INT_FIFO_MOD(table->pending_r);
+	avr_int_vector_t * vector = table->service[ivec];
 
 	// if that single interrupt is masked, ignore it and continue
 	// could also have been disabled, or cleared
-	if (!avr_regbit_get(avr, vector->enable) || !vector->pending) {
-		vector->pending = 0;
+	if (!ivec || !avr_regbit_get(avr, vector->enable)) {
 		avr->interrupt_state = avr_has_pending_interrupts(avr);
 	} else {
 		if (vector && vector->trace)
