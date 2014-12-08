@@ -39,6 +39,10 @@ void usb162_reset(struct avr_t * avr);
 #define __ASSEMBLER__
 #include "avr/iousb162.h"
 
+#ifndef RAMSTART
+	#define RAMSTART _SFR_IO8(0xFF)
+#endif
+
 const struct mcu_t {
 	avr_t			 core;
 	avr_eeprom_t 	eeprom;

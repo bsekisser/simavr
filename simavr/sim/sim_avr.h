@@ -142,6 +142,7 @@ typedef void (*avr_run_t)(
 typedef struct avr_t {
 	const char * mmcu;	// name of the AVR
 	// these are filled by sim_core_declare from constants in /usr/lib/avr/include/avr/io*.h
+	uint16_t	ramstart;
 	uint16_t 	ramend;		
 	uint32_t	flashend;
 	uint32_t	e2end;

@@ -39,6 +39,10 @@ void m128_reset(struct avr_t * avr);
 #define __ASSEMBLER__
 #include "avr/iom128.h"
 
+#ifndef RAMSTART
+	#define RAMSTART _SFR_MEM8(0xFF)
+#endif
+
 /*
  * This is a template for all of the 128 devices, hopefully
  */

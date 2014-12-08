@@ -35,12 +35,29 @@
 #define _BV(v) (v)
 #define _VECTOR(v) (v)
 
+/* Declaring DEFAULT_CORE and RAMSTART
+ *
+ *	many avr headers declare RAMSTART but not all
+ *	in the instance RAMSTART is not declared
+ *	check for the highest _SFR_IO(8/16) and conditionaly declare RAMSTART where
+ *	the highest sfr definition is _SFR_IO8(0x1XX) for example, use _SFR_IO8(0x1FF).
+ *	also, using the example, many part headers specify 0x1XX..0x1FF as reserved.
+ *	an alternative is to declare RAMSTART as MAX_IOs,
+ * 		however this is equivalent to _SFR_IO8(0xFF).
+ *
+ *	#ifndef RAMSTART
+ *		(EITHER) #define RAMSTART MAX_IOs
+ *		(OR)	 #define RAMSTART _SFR_IO8(0x1FF)
+ *	#endif
+ */
+
 /*
  * This declares a typical AVR core, using constants what appears
  * to be in every io*.h file...
  */
 #ifdef SIGNATURE_0
 #define DEFAULT_CORE(_vector_size) \
+	.ramstart = RAMSTART, \
 	.ramend = RAMEND, \
 	.flashend = FLASHEND, \
 	.e2end = E2END, \
@@ -50,6 +67,7 @@
 #else
 // Disable signature when using an old avr toolchain
 #define DEFAULT_CORE(_vector_size) \
+	.ramstart = RAMSTART, \
 	.ramend = RAMEND, \
 	.flashend = FLASHEND, \
 	.e2end = E2END, \

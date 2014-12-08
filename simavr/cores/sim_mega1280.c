@@ -42,6 +42,10 @@ void m1280_reset(struct avr_t * avr);
 #endif
 #include "avr/iom1280.h"
 
+#ifndef RAMSTART
+	#define RAMSTART _SFR_IO8(0x1FF)
+#endif
+
 /*
  * This is a template for all of the 1280 devices, hopefully
  */

@@ -29,6 +29,10 @@ void m169p_reset(struct avr_t * avr);
 #define MCUCSR MCUSR
 #endif
 
+#ifndef RAMSTART
+	#define RAMSTART _SFR_MEM8(0xFF)
+#endif
+
 const struct mcu_t {
 	avr_t          core;
 	avr_eeprom_t 	eeprom;

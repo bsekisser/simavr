@@ -43,6 +43,10 @@ void m2560_reset(struct avr_t * avr);
 #endif
 #include "avr/iom2560.h"
 
+#ifndef RAMSTART
+	#define RAMSTART _SFR_IO8(0x1FF)
+#endif
+
 /*
  * This is a template for all of the 2560 devices, hopefully
  */
