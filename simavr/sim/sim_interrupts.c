@@ -185,15 +185,12 @@ avr_get_interrupt_irq(
 static inline uint8_t avr_ffsll(uint64_t llval)
 {
 	uint64_t vec = 1;
-	int count = 64;
+	int count = 0;
 	
-	while (count--) {
-		if (llval & vec)
-			return (64 - count);
-		vec <<= 1;
-	}
+	while ((vec <<= 1) && !(llval & vec))
+		count++;
 	
-	return 0;
+	return count;
 }
 
 /*
@@ -219,9 +216,9 @@ avr_service_interrupts(
 
 	avr_int_table_p table = &avr->interrupts;
 
-	int ivec = avr_ffsll(table->pending >> 1);
+	int ivec = avr_ffsll(table->pending) + 1;
 
-	avr_int_vector_t * vector = table->service[ivec];
+	avr_int_vector_t * vector = table->vector[ivec];
 
 	// if that single interrupt is masked, ignore it and continue
 	// could also have been disabled, or cleared
