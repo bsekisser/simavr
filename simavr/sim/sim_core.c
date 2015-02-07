@@ -157,6 +157,16 @@ uint8_t avr_core_watch_read(avr_t *avr, uint16_t addr)
 	return avr->data[addr];
 }
 
+static inline uint16_t _avr_flash_read16le(avr_t * avr, avr_flashaddr_t addr)
+{
+	return(avr->flash[addr] | (avr->flash[addr + 1] << 8));
+}
+
+static inline uint16_t _avr_get_r16le(avr_t * avr, uint8_t addr)
+{
+	return(avr->data[addr] | (avr->data[addr + 1] << 8));
+}
+
 /*
  * Set a register (r < 256)
  * if it's an IO register (> 31) also (try to) call any callback that was
@@ -187,12 +197,34 @@ static inline void _avr_set_r(avr_t * avr, uint8_t r, uint8_t v)
 		avr->data[r] = v;
 }
 
+static inline void _avr_set_r16le(avr_t * avr, uint8_t addr, uint16_t data)
+{
+	_avr_set_r(avr, addr + 1, data >> 8);
+	_avr_set_r(avr, addr, data);
+}
+
+static inline uint16_t _avr_get_r16le_op(avr_t * avr, uint8_t addr, uint8_t op)
+{
+	uint16_t data = _avr_get_r16le(avr, addr);
+	
+	if(op) {
+		if(op == 1)
+			_avr_set_r16le(avr, addr, data + 1);
+		else {
+			data--;
+			_avr_set_r16le(avr, addr, data);
+		}
+	}
+	
+	return(data);
+}
+
 /*
  * Stack pointer access
  */
 inline uint16_t _avr_sp_get(avr_t * avr)
 {
-	return avr->data[R_SPL] | (avr->data[R_SPH] << 8);
+	return _avr_get_r16le(avr, R_SPL);
 }
 
 inline void _avr_sp_set(avr_t * avr, uint16_t sp)
@@ -414,7 +446,7 @@ void avr_dump_state(avr_t * avr)
 #define get_vp2_k6(o) \
 		const uint8_t p = 24 + ((o >> 3) & 0x6); \
 		const uint8_t k = ((o & 0x00c0) >> 2) | (o & 0xf); \
-		const uint16_t vp = avr->data[p] | (avr->data[p + 1] << 8);
+		const uint16_t vp = _avr_get_r16le(avr, p);
 
 #define get_sreg_bit(o) \
 		const uint8_t b = (o >> 4) & 7;
@@ -553,7 +585,7 @@ _avr_flags_znv0s (struct avr_t * avr, uint8_t res)
 
 static inline int _avr_is_instruction_32_bits(avr_t * avr, avr_flashaddr_t pc)
 {
-	uint16_t o = (avr->flash[pc] | (avr->flash[pc+1] << 8)) & 0xfc0f;
+	uint16_t o = _avr_flash_read16le(avr ,pc) & 0xfc0f;
 	return	o == 0x9200 || // STS ! Store Direct to Data Space
 			o == 0x9000 || // LDS Load Direct from Data Space
 			o == 0x940c || // JMP Long Jump
@@ -603,7 +635,7 @@ run_one_again:
 		return 0;
 	}
 
-	uint32_t		opcode = (avr->flash[avr->pc + 1] << 8) | avr->flash[avr->pc];
+	uint32_t		opcode = _avr_flash_read16le(avr, avr->pc);
 	avr_flashaddr_t	new_pc = avr->pc + 2;	// future "default" pc
 	int 			cycle = 1;
 
@@ -855,7 +887,7 @@ run_one_again:
 			switch (opcode & 0xd008) {
 				case 0xa000:
 				case 0x8000: {	// LD (LDD) -- Load Indirect using Z -- 10q0 qqsd dddd yqqq
-					uint16_t v = avr->data[R_ZL] | (avr->data[R_ZH] << 8);
+					uint16_t v = _avr_get_r16le(avr, R_ZL);
 					get_d5_q6(opcode);
 					if (opcode & 0x0200) {
 						STATE("st (Z+%d[%04x]), %s[%02x]\n", q, v+q, avr_regname(d), avr->data[d]);
@@ -868,7 +900,7 @@ run_one_again:
 				}	break;
 				case 0xa008:
 				case 0x8008: {	// LD (LDD) -- Load Indirect using Y -- 10q0 qqsd dddd yqqq
-					uint16_t v = avr->data[R_YL] | (avr->data[R_YH] << 8);
+					uint16_t v = _avr_get_r16le(avr, R_YL);
 					get_d5_q6(opcode);
 					if (opcode & 0x0200) {
 						STATE("st (Y+%d[%04x]), %s[%02x]\n", q, v+q, avr_regname(d), avr->data[d]);
@@ -927,7 +959,7 @@ run_one_again:
 					int p = opcode & 0x100;
 					if (e && !avr->eind)
 						_avr_invalid_opcode(avr);
-					uint32_t z = avr->data[R_ZL] | (avr->data[R_ZH] << 8);
+					uint32_t z = _avr_get_r16le(avr, R_ZL);
 					if (e)
 						z |= avr->data[avr->eind] << 16;
 					STATE("%si%s Z[%04x]\n", e?"e":"", p?"call":"jmp", z << 1);
@@ -948,7 +980,7 @@ run_one_again:
 					STACK_FRAME_POP();
 				}	break;
 				case 0x95c8: {	// LPM -- Load Program Memory R0 <- (Z) -- 1001 0101 1100 1000
-					uint16_t z = avr->data[R_ZL] | (avr->data[R_ZH] << 8);
+					uint16_t z = _avr_get_r16le(avr, R_ZL);
 					STATE("lpm %s, (Z[%04x])\n", avr_regname(0), z);
 					cycle += 2; // 3 cycles
 					_avr_set_r(avr, 0, avr->flash[z]);
@@ -973,7 +1005,7 @@ run_one_again:
 					switch (opcode & 0xfe0f) {
 						case 0x9000: {	// LDS -- Load Direct from Data Space, 32 bits -- 1001 0000 0000 0000
 							get_d5(opcode);
-							uint16_t x = (avr->flash[new_pc+1] << 8) | avr->flash[new_pc];
+							uint16_t x = _avr_flash_read16le(avr, new_pc);
 							new_pc += 2;
 							STATE("lds %s[%02x], 0x%04x\n", avr_regname(d), avr->data[d], x);
 							_avr_set_r(avr, d, _avr_get_ram(avr, x));
@@ -982,22 +1014,17 @@ run_one_again:
 						case 0x9005:
 						case 0x9004: {	// LPM -- Load Program Memory -- 1001 000d dddd 01oo
 							get_d5(opcode);
-							uint16_t z = avr->data[R_ZL] | (avr->data[R_ZH] << 8);
 							int op = opcode & 1;
+							uint16_t z = _avr_get_r16le_op(avr, R_ZL, op);
 							STATE("lpm %s, (Z[%04x]%s)\n", avr_regname(d), z, op ? "+" : "");
 							_avr_set_r(avr, d, avr->flash[z]);
-							if (op) {
-								z++;
-								_avr_set_r(avr, R_ZH, z >> 8);
-								_avr_set_r(avr, R_ZL, z);
-							}
 							cycle += 2; // 3 cycles
 						}	break;
 						case 0x9006:
 						case 0x9007: {	// ELPM -- Extended Load Program Memory -- 1001 000d dddd 01oo
 							if (!avr->rampz)
 								_avr_invalid_opcode(avr);
-							uint32_t z = avr->data[R_ZL] | (avr->data[R_ZH] << 8) | (avr->data[avr->rampz] << 16);
+							uint32_t z = _avr_get_r16le(avr, R_ZL) | (avr->data[avr->rampz] << 16);
 							get_d5(opcode);
 							int op = opcode & 1;
 							STATE("elpm %s, (Z[%02x:%04x]%s)\n", avr_regname(d), z >> 16, z & 0xffff, op ? "+" : "");
@@ -1023,14 +1050,10 @@ run_one_again:
 						case 0x900e: {	// LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo
 							int op = opcode & 3;
 							get_d5(opcode);
-							uint16_t x = (avr->data[R_XH] << 8) | avr->data[R_XL];
+							uint16_t x = _avr_get_r16le_op(avr, R_XL, op);
 							STATE("ld %s, %sX[%04x]%s\n", avr_regname(d), op == 2 ? "--" : "", x, op == 1 ? "++" : "");
 							cycle++; // 2 cycles (1 for tinyavr, except with inc/dec 2)
-							if (op == 2) x--;
 							uint8_t vd = _avr_get_ram(avr, x);
-							if (op == 1) x++;
-							_avr_set_r(avr, R_XH, x >> 8);
-							_avr_set_r(avr, R_XL, x);
 							_avr_set_r(avr, d, vd);
 						}	break;
 						case 0x920c:
@@ -1076,7 +1099,7 @@ run_one_again:
 						}	break;
 						case 0x9200: {	// STS -- Store Direct to Data Space, 32 bits -- 1001 0010 0000 0000
 							get_vd5(opcode);
-							uint16_t x = (avr->flash[new_pc+1] << 8) | avr->flash[new_pc];
+							uint16_t x = _avr_flash_read16le(avr, new_pc);
 							new_pc += 2;
 							STATE("sts 0x%04x, %s[%02x]\n", x, avr_regname(d), vd);
 							cycle++;
@@ -1195,7 +1218,7 @@ run_one_again:
 						case 0x940c:
 						case 0x940d: {	// JMP -- Long Call to sub, 32 bits -- 1001 010a aaaa 110a
 							avr_flashaddr_t a = ((opcode & 0x01f0) >> 3) | (opcode & 1);
-							uint16_t x = (avr->flash[new_pc+1] << 8) | avr->flash[new_pc];
+							uint16_t x = _avr_flash_read16le(avr, new_pc);
 							a = (a << 16) | x;
 							STATE("jmp 0x%06x\n", a);
 							new_pc = a << 1;
@@ -1205,7 +1228,7 @@ run_one_again:
 						case 0x940e:
 						case 0x940f: {	// CALL -- Long Call to sub, 32 bits -- 1001 010a aaaa 111a
 							avr_flashaddr_t a = ((opcode & 0x01f0) >> 3) | (opcode & 1);
-							uint16_t x = (avr->flash[new_pc+1] << 8) | avr->flash[new_pc];
+							uint16_t x = _avr_flash_read16le(avr, new_pc);
 							a = (a << 16) | x;
 							STATE("call 0x%06x\n", a);
 							new_pc += 2;
