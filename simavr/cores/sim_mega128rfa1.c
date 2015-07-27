@@ -79,25 +79,9 @@ const struct mcu_t {
 		AVR_EXTINT_MEGA_DECLARE(6, 'E', PE6, B),
 		AVR_EXTINT_MEGA_DECLARE(7, 'E', PE7, B),
 	},
-	.portb = {
-		.name = 'B', .r_port = PORTB, .r_ddr = DDRB, .r_pin = PINB,
-		.pcint = {
-			.enable = AVR_IO_REGBIT(PCICR, PCIE0),
-			.raised = AVR_IO_REGBIT(PCIFR, PCIF0),
-			.vector = PCINT0_vect,
-		},
-		.r_pcint = PCMSK0,
-	},
+	AVR_IOPORT_PCINT_DECLARE(b, 'B', B, 0),
 	AVR_IOPORT_DECLARE(d, 'D', D),
-	.porte = {
-		.name = 'E', .r_port = PORTE, .r_ddr = DDRE, .r_pin = PINE,
-		.pcint = {
-			.enable = AVR_IO_REGBIT(PCICR, PCIE1),
-			.raised = AVR_IO_REGBIT(PCIFR, PCIF1),
-			.vector = PCINT1_vect,
-		},
-		.r_pcint = PCMSK1,
-	},
+	AVR_IOPORT_PCINT_DECLARE(e, 'E', E, 1),
 	AVR_IOPORT_DECLARE(f, 'F', F),
 	AVR_IOPORT_DECLARE(g, 'G', G),
 

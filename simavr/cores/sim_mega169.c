@@ -62,8 +62,10 @@ const struct mcu_t {
 	AVR_IOPORT_PCINT_DECLARE(b, 'B', B, 1),
 	AVR_IOPORT_DECLARE(c, 'C', C),
 	AVR_IOPORT_DECLARE(d, 'D', D),
+	AVR_IOPORT_PCINT_DECLARE(e, 'E', E, 0),
 	AVR_IOPORT_DECLARE(f, 'F', F),
 	AVR_IOPORT_DECLARE(g, 'G', G),
+
 	.uart0 = {
 		.name = '0',
 		.r_udr = UDR0,

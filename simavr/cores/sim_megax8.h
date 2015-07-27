@@ -91,7 +91,7 @@ const struct mcu_t SIM_CORENAME = {
 	},
 	AVR_IOPORT_PCINT_DECLARE(b, 'B', B, 0),
 	AVR_IOPORT_PCINT_DECLARE(c, 'C', C, 1),
-	AVR_IOPORT_PCINT_DECLARE(d, 'd', d, 2),
+	AVR_IOPORT_PCINT_DECLARE(d, 'D', d, 2),
 	.uart = {
 		.disabled = AVR_IO_REGBIT(PRR,PRUSART0),
 		.name = '0',
