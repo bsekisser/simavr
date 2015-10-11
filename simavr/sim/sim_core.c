@@ -762,6 +762,26 @@ INLINE_INST_DECL(ld, uint8_t r)
 	_avr_set_r(avr, d, vd);
 }
 
+INLINE_INST_DECL(ldd_std, uint8_t r)
+{
+	uint16_t v = _avr_data_read16le(avr, r);
+	get_d5_q6(opcode);
+	if (opcode & 0x0200) {
+		uint8_t vd = avr->data[d];
+		STATE("st (%c+%d[%04x]), %s[%02x]\n", 
+			*avr_regname(r), q, v+q, 
+			avr_regname(d), vd);
+		_avr_set_ram(avr, v+q, vd);
+	} else {
+		uint8_t vvr = _avr_get_ram(avr, v+q);
+		STATE("ld %s, (%c+%d[%04x])=[%02x]\n", 
+			avr_regname(d), *avr_regname(r), 
+			q, v+q, vvr);
+		_avr_set_r(avr, d, vvr);
+	}
+	(*cycle)++; // 2 cycles, 3 for tinyavr
+}
+
 INST_DECL(mov)
 {
 	get_d5_vr5(opcode);
@@ -1043,32 +1063,13 @@ run_one_again:
 			 * q = 6 bit displacement
 			 */
 			switch (opcode & 0xd008) {
-				case 0xa000:
-				case 0x8000: {	// LD (LDD) -- Load Indirect using Z -- 10q0 qqsd dddd yqqq
-					uint16_t v = _avr_data_read16le(avr, R_ZL);
-					get_d5_q6(opcode);
-					if (opcode & 0x0200) {
-						STATE("st (Z+%d[%04x]), %s[%02x]\n", q, v+q, avr_regname(d), avr->data[d]);
-						_avr_set_ram(avr, v+q, avr->data[d]);
-					} else {
-						STATE("ld %s, (Z+%d[%04x])=[%02x]\n", avr_regname(d), q, v+q, avr->data[v+q]);
-						_avr_set_r(avr, d, _avr_get_ram(avr, v+q));
-					}
-					cycle += 1; // 2 cycles, 3 for tinyavr
-				}	break;
-				case 0xa008:
-				case 0x8008: {	// LD (LDD) -- Load Indirect using Y -- 10q0 qqsd dddd yqqq
-					uint16_t v = _avr_data_read16le(avr, R_YL);
-					get_d5_q6(opcode);
-					if (opcode & 0x0200) {
-						STATE("st (Y+%d[%04x]), %s[%02x]\n", q, v+q, avr_regname(d), avr->data[d]);
-						_avr_set_ram(avr, v+q, avr->data[d]);
-					} else {
-						STATE("ld %s, (Y+%d[%04x])=[%02x]\n", avr_regname(d), q, v+q, avr->data[d+q]);
-						_avr_set_r(avr, d, _avr_get_ram(avr, v+q));
-					}
-					cycle += 1; // 2 cycles, 3 for tinyavr
-				}	break;
+				// LD (LDD) -- Load Indirect using Z -- 10q0 qqsd dddd yqqq
+				INST_ESAC(0x8000, 0xd008, ldd_std, R_ZL)
+				INST_ESAC(0xa000, 0xd008, ldd_std, R_ZL)
+
+				// LD (LDD) -- Load Indirect using Y -- 10q0 qqsd dddd yqqq
+				INST_ESAC(0x8008, 0xd008, ldd_std, R_YL)
+				INST_ESAC(0xa008, 0xd008, ldd_std, R_YL)
 				default: _avr_invalid_opcode(avr);
 			}
 		}	break;
