@@ -117,7 +117,8 @@ _avr_data_read16le(
 	avr_t * avr,
 	uint16_t addr)
 {
-	return(avr->data[addr] | (avr->data[addr + 1] << 8));
+	uint16_t retval = avr->data[addr] | (avr->data[addr + 1] << 8);
+	return retval;
 }
 
 static inline uint16_t
@@ -125,7 +126,8 @@ _avr_flash_read16le(
 	avr_t * avr,
 	avr_flashaddr_t addr)
 {
-	return(avr->flash[addr] | (avr->flash[addr + 1] << 8));
+	uint16_t retval = avr->flash[addr] | (avr->flash[addr + 1] << 8);
+	return retval;
 }
 
 void avr_core_watch_write(avr_t *avr, uint16_t addr, uint8_t v)
@@ -683,8 +685,7 @@ run_one_again:
 									uint8_t d = ((opcode >> 4) & 0xf) << 1;
 									uint8_t r = ((opcode) & 0xf) << 1;
 									STATE("movw %s:%s, %s:%s[%02x%02x]\n", avr_regname(d), avr_regname(d+1), avr_regname(r), avr_regname(r+1), avr->data[r+1], avr->data[r]);
-									uint16_t vr = avr->data[r] | (avr->data[r + 1] << 8);
-									_avr_set_r16le(avr, d, vr);
+									_avr_set_r16le(avr, d, _avr_data_read16le(avr, r));
 								}	break;
 								case 0x0200: {	// MULS -- Multiply Signed -- 0000 0010 dddd rrrr
 									int8_t r = 16 + (opcode & 0xf);
