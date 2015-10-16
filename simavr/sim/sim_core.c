@@ -113,6 +113,14 @@ void crash(avr_t* avr)
 #endif
 
 static inline uint16_t
+_avr_data_read16le(
+	avr_t * avr,
+	uint16_t addr)
+{
+	return(avr->data[addr] | (avr->data[addr + 1] << 8));
+}
+
+static inline uint16_t
 _avr_flash_read16le(
 	avr_t * avr,
 	avr_flashaddr_t addr)
@@ -220,7 +228,7 @@ _avr_set_r16le_hl(
  */
 inline uint16_t _avr_sp_get(avr_t * avr)
 {
-	return avr->data[R_SPL] | (avr->data[R_SPH] << 8);
+	return _avr_data_read16le(avr, R_SPL);
 }
 
 inline void _avr_sp_set(avr_t * avr, uint16_t sp)
@@ -441,7 +449,7 @@ void avr_dump_state(avr_t * avr)
 #define get_vp2_k6(o) \
 		const uint8_t p = 24 + ((o >> 3) & 0x6); \
 		const uint8_t k = ((o & 0x00c0) >> 2) | (o & 0xf); \
-		const uint16_t vp = avr->data[p] | (avr->data[p + 1] << 8);
+		const uint16_t vp = _avr_data_read16le(avr, p);
 
 #define get_sreg_bit(o) \
 		const uint8_t b = (o >> 4) & 7;
@@ -880,7 +888,7 @@ run_one_again:
 			switch (opcode & 0xd008) {
 				case 0xa000:
 				case 0x8000: {	// LD (LDD) -- Load Indirect using Z -- 10q0 qqsd dddd yqqq
-					uint16_t v = avr->data[R_ZL] | (avr->data[R_ZH] << 8);
+					uint16_t v = _avr_data_read16le(avr, R_ZL);
 					get_d5_q6(opcode);
 					if (opcode & 0x0200) {
 						STATE("st (Z+%d[%04x]), %s[%02x]\n", q, v+q, avr_regname(d), avr->data[d]);
@@ -893,7 +901,7 @@ run_one_again:
 				}	break;
 				case 0xa008:
 				case 0x8008: {	// LD (LDD) -- Load Indirect using Y -- 10q0 qqsd dddd yqqq
-					uint16_t v = avr->data[R_YL] | (avr->data[R_YH] << 8);
+					uint16_t v = _avr_data_read16le(avr, R_YL);
 					get_d5_q6(opcode);
 					if (opcode & 0x0200) {
 						STATE("st (Y+%d[%04x]), %s[%02x]\n", q, v+q, avr_regname(d), avr->data[d]);
@@ -952,7 +960,7 @@ run_one_again:
 					int p = opcode & 0x100;
 					if (e && !avr->eind)
 						_avr_invalid_opcode(avr);
-					uint32_t z = avr->data[R_ZL] | (avr->data[R_ZH] << 8);
+					uint32_t z = _avr_data_read16le(avr, R_ZL);
 					if (e)
 						z |= avr->data[avr->eind] << 16;
 					STATE("%si%s Z[%04x]\n", e?"e":"", p?"call":"jmp", z << 1);
@@ -973,7 +981,7 @@ run_one_again:
 					STACK_FRAME_POP();
 				}	break;
 				case 0x95c8: {	// LPM -- Load Program Memory R0 <- (Z) -- 1001 0101 1100 1000
-					uint16_t z = avr->data[R_ZL] | (avr->data[R_ZH] << 8);
+					uint16_t z = _avr_data_read16le(avr, R_ZL);
 					STATE("lpm %s, (Z[%04x])\n", avr_regname(0), z);
 					cycle += 2; // 3 cycles
 					_avr_set_r(avr, 0, avr->flash[z]);
@@ -991,7 +999,7 @@ run_one_again:
 						case 0x9005:
 						case 0x9004: {	// LPM -- Load Program Memory -- 1001 000d dddd 01oo
 							get_d5(opcode);
-							uint16_t z = avr->data[R_ZL] | (avr->data[R_ZH] << 8);
+							uint16_t z = _avr_data_read16le(avr, R_ZL);
 							int op = opcode & 1;
 							STATE("lpm %s, (Z[%04x]%s)\n", avr_regname(d), z, op ? "+" : "");
 							_avr_set_r(avr, d, avr->flash[z]);
@@ -1005,7 +1013,7 @@ run_one_again:
 						case 0x9007: {	// ELPM -- Extended Load Program Memory -- 1001 000d dddd 01oo
 							if (!avr->rampz)
 								_avr_invalid_opcode(avr);
-							uint32_t z = avr->data[R_ZL] | (avr->data[R_ZH] << 8) | (avr->data[avr->rampz] << 16);
+							uint32_t z = _avr_data_read16le(avr, R_ZL) | (avr->data[avr->rampz] << 16);
 							get_d5(opcode);
 							int op = opcode & 1;
 							STATE("elpm %s, (Z[%02x:%04x]%s)\n", avr_regname(d), z >> 16, z & 0xffff, op ? "+" : "");
@@ -1030,7 +1038,7 @@ run_one_again:
 						case 0x900e: {	// LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo
 							int op = opcode & 3;
 							get_d5(opcode);
-							uint16_t x = (avr->data[R_XH] << 8) | avr->data[R_XL];
+							uint16_t x = _avr_data_read16le(avr, R_XL);
 							STATE("ld %s, %sX[%04x]%s\n", avr_regname(d), op == 2 ? "--" : "", x, op == 1 ? "++" : "");
 							cycle++; // 2 cycles (1 for tinyavr, except with inc/dec 2)
 							if (op == 2) x--;
@@ -1044,7 +1052,7 @@ run_one_again:
 						case 0x920e: {	// ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo
 							int op = opcode & 3;
 							get_vd5(opcode);
-							uint16_t x = (avr->data[R_XH] << 8) | avr->data[R_XL];
+							uint16_t x = _avr_data_read16le(avr, R_XL);
 							STATE("st %sX[%04x]%s, %s[%02x] \n", op == 2 ? "--" : "", x, op == 1 ? "++" : "", avr_regname(d), vd);
 							cycle++; // 2 cycles, except tinyavr
 							if (op == 2) x--;
@@ -1056,7 +1064,7 @@ run_one_again:
 						case 0x900a: {	// LD -- Load Indirect from Data using Y -- 1001 000d dddd 10oo
 							int op = opcode & 3;
 							get_d5(opcode);
-							uint16_t y = (avr->data[R_YH] << 8) | avr->data[R_YL];
+							uint16_t y = _avr_data_read16le(avr, R_YL);
 							STATE("ld %s, %sY[%04x]%s\n", avr_regname(d), op == 2 ? "--" : "", y, op == 1 ? "++" : "");
 							cycle++; // 2 cycles, except tinyavr
 							if (op == 2) y--;
@@ -1069,7 +1077,7 @@ run_one_again:
 						case 0x920a: {	// ST -- Store Indirect Data Space Y -- 1001 001d dddd 10oo
 							int op = opcode & 3;
 							get_vd5(opcode);
-							uint16_t y = (avr->data[R_YH] << 8) | avr->data[R_YL];
+							uint16_t y = _avr_data_read16le(avr, R_YL);
 							STATE("st %sY[%04x]%s, %s[%02x]\n", op == 2 ? "--" : "", y, op == 1 ? "++" : "", avr_regname(d), vd);
 							cycle++;
 							if (op == 2) y--;
@@ -1089,7 +1097,7 @@ run_one_again:
 						case 0x9002: {	// LD -- Load Indirect from Data using Z -- 1001 000d dddd 00oo
 							int op = opcode & 3;
 							get_d5(opcode);
-							uint16_t z = (avr->data[R_ZH] << 8) | avr->data[R_ZL];
+							uint16_t z = _avr_data_read16le(avr, R_ZL);
 							STATE("ld %s, %sZ[%04x]%s\n", avr_regname(d), op == 2 ? "--" : "", z, op == 1 ? "++" : "");
 							cycle++;; // 2 cycles, except tinyavr
 							if (op == 2) z--;
@@ -1102,7 +1110,7 @@ run_one_again:
 						case 0x9202: {	// ST -- Store Indirect Data Space Z -- 1001 001d dddd 00oo
 							int op = opcode & 3;
 							get_vd5(opcode);
-							uint16_t z = (avr->data[R_ZH] << 8) | avr->data[R_ZL];
+							uint16_t z = _avr_data_read16le(avr, R_ZL);
 							STATE("st %sZ[%04x]%s, %s[%02x] \n", op == 2 ? "--" : "", z, op == 1 ? "++" : "", avr_regname(d), vd);
 							cycle++; // 2 cycles, except tinyavr
 							if (op == 2) z--;
