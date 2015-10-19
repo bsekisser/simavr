@@ -629,7 +629,11 @@ static inline int _avr_is_instruction_32_bits(avr_t * avr, avr_flashaddr_t pc)
 	case _opcode: INST_CALL(_opname, ## _args); break;
 
 enum {
-	INST_FLAG_ADD = 1,
+	INST_FLAG_NONE = 0,
+	INST_FLAG_ADD,
+	INST_FLAG_AND,
+	INST_FLAG_EOR,
+	INST_FLAG_OR,
 	INST_FLAG_SUB,
 };
 
@@ -669,6 +673,80 @@ INLINE_INST_DECL(addc_add, const uint16_t flags)
 	SREG();
 }
 
+INLINE_INST_DECL(h4k8_alu_logic, const uint8_t operation, const uint16_t flags)
+{
+	get_vh4_k8(opcode);
+	uint8_t res;
+
+	int save_result = flags & INST_FLAG_SAVE_RESULT;
+
+	switch (operation) {
+		case INST_FLAG_AND:
+			res = vh & k;
+			break;
+		case INST_FLAG_OR:
+			res = vh | k;
+			break;
+		case INST_FLAG_SUB:
+			res = vh - k - ((flags & INST_FLAG_CARRY) ? avr->sreg[S_C] : 0);
+			break;
+		case INST_FLAG_NONE:
+			res = k;
+	}
+
+	int trace = 0;
+	T(trace = 1;)
+
+	char *opname; (void)opname; // (void) quiets compiler when not used
+
+	if(trace) {
+		switch(flags)	{
+			case INST_FLAG_AND:
+				opname = "andi";
+				break;
+			case INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT | INST_FLAG_SUB:
+				opname = "sbci";
+				break;
+			case INST_FLAG_OR:
+				opname = "ori";
+				break;
+			case INST_FLAG_SAVE_RESULT | INST_FLAG_SUB:
+				opname = "subi";
+				break;
+			case INST_FLAG_SUB:
+				opname = "cpi";
+				break;
+			case INST_FLAG_NONE:
+				opname = "ldi";
+				break;
+		}
+	}		
+
+	if ((operation == INST_FLAG_SUB) && save_result) {
+		STATE("%s %s[%02x], 0x%02x = %02x\n", opname, avr_regname(h), vh, k, res);
+	} else {
+		if(operation)
+			STATE("%s %s[%02x], 0x%02x\n", opname, avr_regname(h), vh, k);
+		else
+			STATE("ldi %s, 0x%02x\n", avr_regname(h), k);
+	}
+
+	if (save_result)
+		_avr_set_r(avr, h, res);
+
+	if (operation == INST_FLAG_SUB) {
+		if(flags & INST_FLAG_CARRY)
+			_avr_flags_sub_Rzns(avr, res, vh, k);
+		else
+			_avr_flags_sub_zns(avr, res, vh, k);
+	} else if (operation) 
+		_avr_flags_znv0s(avr, res);
+
+	if (operation) {
+		SREG();
+	}
+}
+
 INST_SUB_CALL_DECL(addc, addc_add, INST_FLAG_ADD | INST_FLAG_CARRY)
 INST_SUB_CALL_DECL(add, addc_add, INST_FLAG_ADD)
 
@@ -685,6 +763,8 @@ INST_DECL(and)
 	_avr_flags_znv0s(avr, res);
 	SREG();
 }
+
+INST_SUB_CALL_DECL(andi, h4k8_alu_logic, INST_FLAG_AND, INST_FLAG_AND | INST_FLAG_SAVE_RESULT)
 
 INST_DECL(break)
 {
@@ -723,6 +803,7 @@ INLINE_INST_DECL(cp_cpc_sbc_sub, const uint16_t flags)
 
 INST_SUB_CALL_DECL(cp, cp_cpc_sbc_sub, INST_FLAG_SUB)
 INST_SUB_CALL_DECL(cpc, cp_cpc_sbc_sub, INST_FLAG_CARRY | INST_FLAG_SUB)
+INST_SUB_CALL_DECL(cpi, h4k8_alu_logic, INST_FLAG_SUB, INST_FLAG_SUB)
 
 INST_DECL(cpse)
 {
@@ -761,6 +842,8 @@ INLINE_INST_DECL(ld, uint8_t r)
 	_avr_set_r16le_hl(avr, r, x);
 	_avr_set_r(avr, d, vd);
 }
+
+INST_SUB_CALL_DECL(ldi, h4k8_alu_logic, INST_FLAG_NONE, INST_FLAG_NONE | INST_FLAG_SAVE_RESULT)
 
 INLINE_INST_DECL(ldd_std, uint8_t r)
 {
@@ -879,6 +962,8 @@ INST_DECL(or)
 	SREG();
 }
 
+INST_SUB_CALL_DECL(ori, h4k8_alu_logic, INST_FLAG_OR, INST_FLAG_OR | INST_FLAG_SAVE_RESULT)
+
 INST_DECL(ret)
 {
 	*new_pc = _avr_pop_addr(avr);
@@ -896,6 +981,7 @@ INST_DECL(reti)
 }
 
 INST_SUB_CALL_DECL(sbc, cp_cpc_sbc_sub, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT | INST_FLAG_SUB)
+INST_SUB_CALL_DECL(sbci, h4k8_alu_logic, INST_FLAG_SUB, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT | INST_FLAG_SUB)
 
 INLINE_INST_DECL(skip_io_r_logic, uint8_t rio, uint8_t vrio, uint8_t mask, char *opname_array[2])
 {
@@ -921,6 +1007,7 @@ INLINE_INST_DECL(sbrc_sbrs)
 }
 
 INST_SUB_CALL_DECL(sub, cp_cpc_sbc_sub, INST_FLAG_SAVE_RESULT | INST_FLAG_SUB)
+INST_SUB_CALL_DECL(subi, h4k8_alu_logic, INST_FLAG_SUB, INST_FLAG_SAVE_RESULT | INST_FLAG_SUB)
 
 INST_DECL(sleep)
 {
@@ -1094,49 +1181,11 @@ run_one_again:
 			}
 		}	break;
 
-		case 0x3000: {	// CPI -- Compare Immediate -- 0011 kkkk hhhh kkkk
-			get_vh4_k8(opcode);
-			uint8_t res = vh - k;
-			STATE("cpi %s[%02x], 0x%02x\n", avr_regname(h), vh, k);
-			_avr_flags_sub_zns(avr, res, vh, k);
-			SREG();
-		}	break;
-
-		case 0x4000: {	// SBCI -- Subtract Immediate With Carry -- 0100 kkkk hhhh kkkk
-			get_vh4_k8(opcode);
-			uint8_t res = vh - k - avr->sreg[S_C];
-			STATE("sbci %s[%02x], 0x%02x = %02x\n", avr_regname(h), vh, k, res);
-			_avr_set_r(avr, h, res);
-			_avr_flags_sub_Rzns(avr, res, vh, k);
-			SREG();
-		}	break;
-
-		case 0x5000: {	// SUBI -- Subtract Immediate -- 0101 kkkk hhhh kkkk
-			get_vh4_k8(opcode);
-			uint8_t res = vh - k;
-			STATE("subi %s[%02x], 0x%02x = %02x\n", avr_regname(h), vh, k, res);
-			_avr_set_r(avr, h, res);
-			_avr_flags_sub_zns(avr, res, vh, k);
-			SREG();
-		}	break;
-
-		case 0x6000: {	// ORI aka SBR -- Logical OR with Immediate -- 0110 kkkk hhhh kkkk
-			get_vh4_k8(opcode);
-			uint8_t res = vh | k;
-			STATE("ori %s[%02x], 0x%02x\n", avr_regname(h), vh, k);
-			_avr_set_r(avr, h, res);
-			_avr_flags_znv0s(avr, res);
-			SREG();
-		}	break;
-
-		case 0x7000: {	// ANDI	-- Logical AND with Immediate -- 0111 kkkk hhhh kkkk
-			get_vh4_k8(opcode);
-			uint8_t res = vh & k;
-			STATE("andi %s[%02x], 0x%02x\n", avr_regname(h), vh, k);
-			_avr_set_r(avr, h, res);
-			_avr_flags_znv0s(avr, res);
-			SREG();
-		}	break;
+		INST_ESAC(0x3000, 0xf000, cpi) // CPI -- 0x3000 -- Compare Immediate -- 0011 kkkk hhhh kkkk
+		INST_ESAC(0x4000, 0xf000, sbci) // SBCI -- 0x4000-- Subtract Immediate With Carry -- 0100 kkkk hhhh kkkk
+		INST_ESAC(0x5000, 0xf000, subi) // SUBI -- 0x5000 -- Subtract Immediate -- 0101 kkkk hhhh kkkk
+		INST_ESAC(0x6000, 0xf000, ori) // ORI aka SBR -- 0x6000 -- Logical OR with Immediate -- 0110 kkkk hhhh kkkk
+		INST_ESAC(0x7000, 0xf000, andi) // ANDI	-- 0x7000 -- Logical AND with Immediate -- 0111 kkkk hhhh kkkk
 
 		case 0xa000:
 		case 0x8000: {
@@ -1438,11 +1487,7 @@ run_one_again:
 			}
 		}	break;
 
-		case 0xe000: {	// LDI Rd, K aka SER (LDI r, 0xff) -- 1110 kkkk dddd kkkk
-			get_h4_k8(opcode);
-			STATE("ldi %s, 0x%02x\n", avr_regname(h), k);
-			_avr_set_r(avr, h, k);
-		}	break;
+		INST_ESAC(0xe000, 0xf000, ldi) // LDI Rd, K aka SER (LDI r, 0xff) -- 0xe000 -- 1110 kkkk dddd kkkk
 
 		case 0xf000: {
 			switch (opcode & 0xfe00) {
