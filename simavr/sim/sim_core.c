@@ -779,6 +779,40 @@ INST_DECL(break)
 	}
 }
 
+INLINE_INST_DECL(call_jmp_ei)
+{
+	int e = opcode & 0x10;
+	int p = opcode & 0x100;
+	if (e && !avr->eind)
+		_avr_invalid_opcode(avr);
+	uint32_t z = _avr_data_read16le(avr, R_ZL);
+	if (e)
+		z |= avr->data[avr->eind] << 16;
+	STATE("%si%s Z[%04x]\n", e?"e":"", p?"call":"jmp", z << 1);
+	if (p)
+		*cycle += _avr_push_addr(avr, *new_pc) - 1;
+	*new_pc = z << 1;
+	(*cycle)++;
+	TRACE_JUMP();
+}
+
+INLINE_INST_DECL(call_jmp_long)
+{
+	int push = opcode & 2;
+
+	avr_flashaddr_t a = ((opcode & 0x01f0) >> 3) | (opcode & 1);
+	uint16_t x = _avr_flash_read16le(avr, *new_pc);
+	a = (a << 16) | x;
+	STATE("call 0x%06x\n", push ? "call" : "jmp", a);
+	if (push)
+		*cycle += 1 + _avr_push_addr(avr, *new_pc + 2);
+	else
+		*cycle += 2;
+	*new_pc = a << 1;
+	TRACE_JUMP();
+	STACK_FRAME_PUSH();
+}
+
 INLINE_INST_DECL(cp_cpc_sbc_sub, const uint16_t flags)
 {
 	get_vd5_vr5(opcode);
@@ -963,6 +997,30 @@ INST_DECL(or)
 }
 
 INST_SUB_CALL_DECL(ori, h4k8_alu_logic, INST_FLAG_OR, INST_FLAG_OR | INST_FLAG_SAVE_RESULT)
+
+INLINE_INST_DECL(r_call_jmp)
+{
+	get_o12(opcode);
+
+	int push = opcode & 0x1000;
+
+	STATE("%s .%d [%04x]\n", push ? "rcall" : "rjmp", o >> 1, new_pc + o);
+
+	if(push)
+		*cycle += _avr_push_addr(avr, *new_pc);
+	else
+		(*cycle)++;
+
+	*new_pc = *new_pc + o;
+
+	if (!push || (o != 0)) {
+		TRACE_JUMP();
+	}
+
+	if(push) {
+		STACK_FRAME_PUSH();
+	}
+}
 
 INST_DECL(ret)
 {
@@ -1221,27 +1279,13 @@ run_one_again:
 				INST_ESAC(0x9598, 0xffff, break) // BREAK -- 1001 0101 1001 1000
 				INST_ESAC(0x95a8, 0xffff, wdr) // WDR -- Watchdog Reset -- 1001 0101 1010 1000
 				INST_ESAC(0x95e8, 0xffff, spm) // SPM -- Store Program Memory -- 1001 0101 1110 1000
-				case 0x9409:   // IJMP -- Indirect jump -- 1001 0100 0000 1001
-				case 0x9419:   // EIJMP -- Indirect jump -- 1001 0100 0001 1001   bit 4 is "indirect"
-				case 0x9509:   // ICALL -- Indirect Call to Subroutine -- 1001 0101 0000 1001
-				case 0x9519: { // EICALL -- Indirect Call to Subroutine -- 1001 0101 0001 1001   bit 8 is "push pc"
-					int e = opcode & 0x10;
-					int p = opcode & 0x100;
-					if (e && !avr->eind)
-						_avr_invalid_opcode(avr);
-					uint32_t z = _avr_data_read16le(avr, R_ZL);
-					if (e)
-						z |= avr->data[avr->eind] << 16;
-					STATE("%si%s Z[%04x]\n", e?"e":"", p?"call":"jmp", z << 1);
-					if (p)
-						cycle += _avr_push_addr(avr, new_pc) - 1;
-					new_pc = z << 1;
-					cycle++;
-					TRACE_JUMP();
-				}	break;
 				INST_ESAC(0x9508, 0xffff, ret) // RET -- Return -- 1001 0101 0000 1000
 				INST_ESAC(0x9518, 0xffff, reti) // RETI -- Return from Interrupt -- 1001 0101 0001 1000
 				INST_ESAC(0x95c8, 0xffff, lpm) // LPM -- Load Program Memory R0 <- (Z) -- 1001 0101 1100 1000
+				INST_ESAC(0x9409, 0xffff, call_jmp_ei) // IJMP --0x9409 -- Indirect jump -- 1001 0100 0000 1001
+				INST_ESAC(0x9419, 0xffff, call_jmp_ei) // EIJMP -- 0x9419 -- Indirect jump -- 1001 0100 0001 1001   bit 4 is "indirect"
+				INST_ESAC(0x9509, 0xffff, call_jmp_ei) // ICALL -- 0x9509 -- Indirect Call to Subroutine -- 1001 0101 0000 1001
+				INST_ESAC(0x9519, 0xffff, call_jmp_ei) // EICALL -- 0x9519 -- Indirect Call to Subroutine -- 1001 0101 0001 1001   bit 8 is "push pc"
 				default:  {
 					switch (opcode & 0xfe0f) {
 						// LDS -- 0x9000 -- Load Direct from Data Space, 32 bits -- 1001 0000 0000 0000
@@ -1376,28 +1420,14 @@ run_one_again:
 							_avr_flags_zns(avr, res);
 							SREG();
 						}	break;
-						case 0x940c:
-						case 0x940d: {	// JMP -- Long Call to sub, 32 bits -- 1001 010a aaaa 110a
-							avr_flashaddr_t a = ((opcode & 0x01f0) >> 3) | (opcode & 1);
-							uint16_t x = _avr_flash_read16le(avr, new_pc);
-							a = (a << 16) | x;
-							STATE("jmp 0x%06x\n", a);
-							new_pc = a << 1;
-							cycle += 2;
-							TRACE_JUMP();
-						}	break;
-						case 0x940e:
-						case 0x940f: {	// CALL -- Long Call to sub, 32 bits -- 1001 010a aaaa 111a
-							avr_flashaddr_t a = ((opcode & 0x01f0) >> 3) | (opcode & 1);
-							uint16_t x = _avr_flash_read16le(avr, new_pc);
-							a = (a << 16) | x;
-							STATE("call 0x%06x\n", a);
-							new_pc += 2;
-							cycle += 1 + _avr_push_addr(avr, new_pc);
-							new_pc = a << 1;
-							TRACE_JUMP();
-							STACK_FRAME_PUSH();
-						}	break;
+
+						// JMP -- 0x940c/0x940d -- Long Call to sub, 32 bits -- 1001 010a aaaa 110a
+						INST_ESAC(0x940c, 0xfe0f, call_jmp_long)
+						INST_ESAC(0x940d, 0xfe0f, call_jmp_long)
+
+						// CALL -- 0x940e/0x940f -- Long Call to sub, 32 bits -- 1001 010a aaaa 111a
+						INST_ESAC(0x940e, 0xfe0f, call_jmp_long)
+						INST_ESAC(0x940f, 0xfe0f, call_jmp_long)
 
 						default: {
 							switch (opcode & 0xff00) {
@@ -1467,25 +1497,8 @@ run_one_again:
 			}
 		}	break;
 
-		case 0xc000: {	// RJMP -- 1100 kkkk kkkk kkkk
-			get_o12(opcode);
-			STATE("rjmp .%d [%04x]\n", o >> 1, new_pc + o);
-			new_pc = new_pc + o;
-			cycle++;
-			TRACE_JUMP();
-		}	break;
-
-		case 0xd000: {	// RCALL -- 1101 kkkk kkkk kkkk
-			get_o12(opcode);
-			STATE("rcall .%d [%04x]\n", o >> 1, new_pc + o);
-			cycle += _avr_push_addr(avr, new_pc);
-			new_pc = new_pc + o;
-			// 'rcall .1' is used as a cheap "push 16 bits of room on the stack"
-			if (o != 0) {
-				TRACE_JUMP();
-				STACK_FRAME_PUSH();
-			}
-		}	break;
+		INST_ESAC(0xc000, 0fx000, r_call_jmp) // RJMP -- 0xc000 -- 1100 kkkk kkkk kkkk
+		INST_ESAC(0xd000, 0xf000, r_call_jmp) // RCALL -- 0xd000 -- 1101 kkkk kkkk kkkk
 
 		INST_ESAC(0xe000, 0xf000, ldi) // LDI Rd, K aka SER (LDI r, 0xff) -- 0xe000 -- 1110 kkkk dddd kkkk
 
