@@ -1044,6 +1044,59 @@ INST_DECL(mul)
 	SREG();
 }
 
+INST_DECL(mul_complex)
+{
+	int8_t r = 16 + (opcode & 0x7);
+	int8_t d = 16 + ((opcode >> 4) & 0x7);
+	int16_t res = 0;
+	uint8_t c = 0;
+	T(const char * name = "";)
+	switch (opcode & 0x88) {
+		case 0x00: 	// MULSU -- Multiply Signed Unsigned -- 0000 0011 0ddd 0rrr
+			res = ((uint8_t)avr->data[r]) * ((int8_t)avr->data[d]);
+			c = (res >> 15) & 1;
+			T(name = "mulsu";)
+			break;
+		case 0x08: 	// FMUL -- Fractional Multiply Unsigned -- 0000 0011 0ddd 1rrr
+			res = ((uint8_t)avr->data[r]) * ((uint8_t)avr->data[d]);
+			c = (res >> 15) & 1;
+			res <<= 1;
+			T(name = "fmul";)
+			break;
+		case 0x80: 	// FMULS -- Multiply Signed -- 0000 0011 1ddd 0rrr
+			res = ((int8_t)avr->data[r]) * ((int8_t)avr->data[d]);
+			c = (res >> 15) & 1;
+			res <<= 1;
+			T(name = "fmuls";)
+			break;
+		case 0x88: 	// FMULSU -- Multiply Signed Unsigned -- 0000 0011 1ddd 1rrr
+			res = ((uint8_t)avr->data[r]) * ((int8_t)avr->data[d]);
+			c = (res >> 15) & 1;
+			res <<= 1;
+			T(name = "fmulsu";)
+			break;
+	}
+	(*cycle)++;
+	STATE("%s %s[%d], %s[%02x] = %d\n", name, avr_regname(d), ((int8_t)avr->data[d]), avr_regname(r), ((int8_t)avr->data[r]), res);
+	_avr_set_r16le(avr, 0, res);
+	avr->sreg[S_C] = c;
+	avr->sreg[S_Z] = res == 0;
+	SREG();
+}
+
+INST_DECL(muls)
+{
+	int8_t r = 16 + (opcode & 0xf);
+	int8_t d = 16 + ((opcode >> 4) & 0xf);
+	int16_t res = ((int8_t)avr->data[r]) * ((int8_t)avr->data[d]);
+	STATE("muls %s[%d], %s[%02x] = %d\n", avr_regname(d), ((int8_t)avr->data[d]), avr_regname(r), ((int8_t)avr->data[r]), res);
+	_avr_set_r16le(avr, 0, res);
+	avr->sreg[S_C] = (res >> 15) & 1;
+	avr->sreg[S_Z] = res == 0;
+	(*cycle)++;
+	SREG();
+}
+
 INST_DECL(nop)
 {
 	STATE("nop\n");
@@ -1238,55 +1291,8 @@ run_one_again:
 									STATE("movw %s:%s, %s:%s[%02x%02x]\n", avr_regname(d), avr_regname(d+1), avr_regname(r), avr_regname(r+1), avr->data[r+1], avr->data[r]);
 									_avr_set_r16le(avr, d, _avr_data_read16le(avr, r));
 								}	break;
-								case 0x0200: {	// MULS -- Multiply Signed -- 0000 0010 dddd rrrr
-									int8_t r = 16 + (opcode & 0xf);
-									int8_t d = 16 + ((opcode >> 4) & 0xf);
-									int16_t res = ((int8_t)avr->data[r]) * ((int8_t)avr->data[d]);
-									STATE("muls %s[%d], %s[%02x] = %d\n", avr_regname(d), ((int8_t)avr->data[d]), avr_regname(r), ((int8_t)avr->data[r]), res);
-									_avr_set_r16le(avr, 0, res);
-									avr->sreg[S_C] = (res >> 15) & 1;
-									avr->sreg[S_Z] = res == 0;
-									cycle++;
-									SREG();
-								}	break;
-								case 0x0300: {	// MUL -- Multiply -- 0000 0011 fddd frrr
-									int8_t r = 16 + (opcode & 0x7);
-									int8_t d = 16 + ((opcode >> 4) & 0x7);
-									int16_t res = 0;
-									uint8_t c = 0;
-									T(const char * name = "";)
-									switch (opcode & 0x88) {
-										case 0x00: 	// MULSU -- Multiply Signed Unsigned -- 0000 0011 0ddd 0rrr
-											res = ((uint8_t)avr->data[r]) * ((int8_t)avr->data[d]);
-											c = (res >> 15) & 1;
-											T(name = "mulsu";)
-											break;
-										case 0x08: 	// FMUL -- Fractional Multiply Unsigned -- 0000 0011 0ddd 1rrr
-											res = ((uint8_t)avr->data[r]) * ((uint8_t)avr->data[d]);
-											c = (res >> 15) & 1;
-											res <<= 1;
-											T(name = "fmul";)
-											break;
-										case 0x80: 	// FMULS -- Multiply Signed -- 0000 0011 1ddd 0rrr
-											res = ((int8_t)avr->data[r]) * ((int8_t)avr->data[d]);
-											c = (res >> 15) & 1;
-											res <<= 1;
-											T(name = "fmuls";)
-											break;
-										case 0x88: 	// FMULSU -- Multiply Signed Unsigned -- 0000 0011 1ddd 1rrr
-											res = ((uint8_t)avr->data[r]) * ((int8_t)avr->data[d]);
-											c = (res >> 15) & 1;
-											res <<= 1;
-											T(name = "fmulsu";)
-											break;
-									}
-									cycle++;
-									STATE("%s %s[%d], %s[%02x] = %d\n", name, avr_regname(d), ((int8_t)avr->data[d]), avr_regname(r), ((int8_t)avr->data[r]), res);
-									_avr_set_r16le(avr, 0, res);
-									avr->sreg[S_C] = c;
-									avr->sreg[S_Z] = res == 0;
-									SREG();
-								}	break;
+								INST_ESAC(0x0200, 0xff00, muls) // MULS -- 0x0200 -- Multiply Signed -- 0000 0010 dddd rrrr
+								INST_ESAC(0x0300, 0xff00, mul_complex) // MUL -- 0x0300 -- Multiply -- 0000 0011 fddd frrr
 								default: _avr_invalid_opcode(avr);
 							}
 					}
