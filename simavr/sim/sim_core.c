@@ -813,6 +813,20 @@ INLINE_INST_DECL(call_jmp_long)
 	STACK_FRAME_PUSH();
 }
 
+INLINE_INST_DECL(cbi_sbi)
+{
+	get_io5_b3mask(opcode);
+	uint8_t res = _avr_get_ram(avr, io);
+	int set = opcode & 0x0200;
+	if(set)
+		res |= mask;
+	else
+		res &= ~mask;
+	STATE("%s %s[%04x], 0x%02x = %02x\n", set ? "sbi" : "cbi", avr_regname(io), avr->data[io], mask, res);
+	_avr_set_ram(avr, io, res);
+	(*cycle)++;
+}
+
 INLINE_INST_DECL(cp_cpc_sbc_sub, const uint16_t flags)
 {
 	get_vd5_vr5(opcode);
@@ -859,6 +873,17 @@ INST_DECL(eor)
 	_avr_set_r(avr, d, res);
 	_avr_flags_znv0s(avr, res);
 	SREG();
+}
+
+INLINE_INST_DECL(in_out)
+{
+	get_d5_a6(opcode);
+	int out = opcode & 0x800;
+	STATE("%s %s, %s[%02x]\n", out ? "out" : "in" , avr_regname(A), avr_regname(d), avr->data[d]);
+	if (out)
+		_avr_set_ram(avr, A, avr->data[d]);
+	else
+		_avr_set_r(avr, d, _avr_get_ram(avr, A));
 }
 
 INLINE_INST_DECL(ld, uint8_t r)
@@ -1453,21 +1478,9 @@ run_one_again:
 									SREG();
 									cycle++;
 								}	break;
-								case 0x9800: {	// CBI -- Clear Bit in I/O Register -- 1001 1000 AAAA Abbb
-									get_io5_b3mask(opcode);
-									uint8_t res = _avr_get_ram(avr, io) & ~mask;
-									STATE("cbi %s[%04x], 0x%02x = %02x\n", avr_regname(io), avr->data[io], mask, res);
-									_avr_set_ram(avr, io, res);
-									cycle++;
-								}	break;
+								INST_ESAC(0x9800, 0xff00,  cbi_sbi) // CBI -- 0x9800 -- Clear Bit in I/O Register -- 1001 1000 AAAA Abbb
 								INST_ESAC(0x9900, 0xff00, sbic_sbis) // SBIC -- 0x9900 -- Skip if Bit in I/O Register is Cleared -- 1001 1001 AAAA Abbb
-								case 0x9a00: {	// SBI -- Set Bit in I/O Register -- 1001 1010 AAAA Abbb
-									get_io5_b3mask(opcode);
-									uint8_t res = _avr_get_ram(avr, io) | mask;
-									STATE("sbi %s[%04x], 0x%02x = %02x\n", avr_regname(io), avr->data[io], mask, res);
-									_avr_set_ram(avr, io, res);
-									cycle++;
-								}	break;
+								INST_ESAC(0x9a00, 0xff00, cbi_sbi) // SBI -- 0x9a00 -- Set Bit in I/O Register -- 1001 1010 AAAA Abbb
 								INST_ESAC(0x9b00, 0xff00, sbic_sbis) // SBIS -- 0x9b00 -- Skip if Bit in I/O Register is Set -- 1001 1011 AAAA Abbb
 								default:
 									switch (opcode & 0xfc00) {
@@ -1483,16 +1496,8 @@ run_one_again:
 
 		case 0xb000: {
 			switch (opcode & 0xf800) {
-				case 0xb800: {	// OUT A,Rr -- 1011 1AAd dddd AAAA
-					get_d5_a6(opcode);
-					STATE("out %s, %s[%02x]\n", avr_regname(A), avr_regname(d), avr->data[d]);
-					_avr_set_ram(avr, A, avr->data[d]);
-				}	break;
-				case 0xb000: {	// IN Rd,A -- 1011 0AAd dddd AAAA
-					get_d5_a6(opcode);
-					STATE("in %s, %s[%02x]\n", avr_regname(d), avr_regname(A), avr->data[A]);
-					_avr_set_r(avr, d, _avr_get_ram(avr, A));
-				}	break;
+				INST_ESAC(0xb800, 0xf800, in_out) // OUT A,Rr -- 0xb800 -- 1011 1AAd dddd AAAA
+				INST_ESAC(0xb000, 0xf800, in_out) // IN Rd,A -- 0xb000 -- 1011 0AAd dddd AAAA
 				default: _avr_invalid_opcode(avr);
 			}
 		}	break;
