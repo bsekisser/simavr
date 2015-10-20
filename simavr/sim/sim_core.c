@@ -766,6 +766,16 @@ INST_DECL(and)
 
 INST_SUB_CALL_DECL(andi, h4k8_alu_logic, INST_FLAG_AND, INST_FLAG_AND | INST_FLAG_SAVE_RESULT)
 
+INST_DECL(asr)
+{
+	get_vd5(opcode);
+	uint8_t res = ((int8_t)vd) >> 1; /* (vd >> 1) | (vd & 0x80); */
+	STATE("asr %s[%02x]\n", avr_regname(d), vd);
+	_avr_set_r(avr, d, res);
+	_avr_flags_zcnvs(avr, res, vd);
+	SREG();
+}
+
 INLINE_INST_DECL(bld_bst)
 {
 	get_vd5_s3_mask(opcode);
@@ -865,6 +875,17 @@ INLINE_INST_DECL(cbi_sbi)
 	(*cycle)++;
 }
 
+INST_DECL(com)
+{
+	get_vd5(opcode);
+	uint8_t res = 0xff - vd;
+	STATE("com %s[%02x] = %02x\n", avr_regname(d), vd, res);
+	_avr_set_r(avr, d, res);
+	_avr_flags_znv0s(avr, res);
+	avr->sreg[S_C] = 1;
+	SREG();
+}
+
 INLINE_INST_DECL(cp_cpc_sbc_sub, const uint16_t flags)
 {
 	get_vd5_vr5(opcode);
@@ -899,6 +920,17 @@ INST_DECL(cpse)
 	INST_SUB_CALL(skip_if, res);
 }
 
+INST_DECL(dec)
+{
+	get_vd5(opcode);
+	uint8_t res = vd - 1;
+	STATE("dec %s[%02x] = %02x\n", avr_regname(d), vd, res);
+	_avr_set_r(avr, d, res);
+	avr->sreg[S_V] = res == 0x7f;
+	_avr_flags_zns(avr, res);
+	SREG();
+}
+
 INST_DECL(eor)
 {
 	get_vd5_vr5(opcode);
@@ -922,6 +954,17 @@ INLINE_INST_DECL(in_out)
 		_avr_set_ram(avr, A, avr->data[d]);
 	else
 		_avr_set_r(avr, d, _avr_get_ram(avr, A));
+}
+
+INST_DECL(inc)
+{
+	get_vd5(opcode);
+	uint8_t res = vd + 1;
+	STATE("inc %s[%02x] = %02x\n", avr_regname(d), vd, res);
+	_avr_set_r(avr, d, res);
+	avr->sreg[S_V] = res == 0x80;
+	_avr_flags_zns(avr, res);
+	SREG();
 }
 
 INLINE_INST_DECL(ld, uint8_t r)
@@ -1024,6 +1067,17 @@ INLINE_INST_DECL(lpm)
 	*cycle += 2; // 3 cycles
 }
 
+INST_DECL(lsr)
+{
+	get_vd5(opcode);
+	uint8_t res = vd >> 1;
+	STATE("lsr %s[%02x]\n", avr_regname(d), vd);
+	_avr_set_r(avr, d, res);
+	avr->sreg[S_N] = 0;
+	_avr_flags_zcvs(avr, res, vd);
+	SREG();
+}
+
 INST_DECL(mov)
 {
 	get_d5_vr5(opcode);
@@ -1097,6 +1151,19 @@ INST_DECL(muls)
 	SREG();
 }
 
+INST_DECL(neg)
+{
+	get_vd5(opcode);
+	uint8_t res = 0x00 - vd;
+	STATE("neg %s[%02x] = %02x\n", avr_regname(d), vd, res);
+	_avr_set_r(avr, d, res);
+	avr->sreg[S_H] = ((res >> 3) | (vd >> 3)) & 1;
+	avr->sreg[S_V] = res == 0x80;
+	avr->sreg[S_C] = res != 0;
+	_avr_flags_zns(avr, res);
+	SREG();
+}
+
 INST_DECL(nop)
 {
 	STATE("nop\n");
@@ -1113,6 +1180,25 @@ INST_DECL(or)
 }
 
 INST_SUB_CALL_DECL(ori, h4k8_alu_logic, INST_FLAG_OR, INST_FLAG_OR | INST_FLAG_SAVE_RESULT)
+
+INST_DECL(pop)
+{
+	get_d5(opcode);
+	uint8_t vsp = _avr_pop8(avr);
+	_avr_set_r(avr, d, vsp);
+	T(uint16_t sp = _avr_sp_get(avr);)
+	STATE("pop %s (@%04x)[%02x]\n", avr_regname(d), sp, vsp);
+	(*cycle)++;
+}
+
+INST_DECL(push)
+{
+	get_vd5(opcode);
+	_avr_push8(avr, vd);
+	T(uint16_t sp = _avr_sp_get(avr);)
+	STATE("push %s[%02x] (@%04x)\n", avr_regname(d), vd, sp);
+	(*cycle)++;
+}
 
 INLINE_INST_DECL(r_call_jmp)
 {
@@ -1152,6 +1238,16 @@ INST_DECL(reti)
 	avr_sreg_set(avr, S_I, 1);
 	avr_interrupt_reti(avr);
 	INST_SUB_CALL(ret);
+}
+
+INST_DECL(ror)
+{
+	get_vd5(opcode);
+	uint8_t res = (avr->sreg[S_C] ? 0x80 : 0) | vd >> 1;
+	STATE("ror %s[%02x]\n", avr_regname(d), vd);
+	_avr_set_r(avr, d, res);
+	_avr_flags_zcnvs(avr, res, vd);
+	SREG();
 }
 
 INST_SUB_CALL_DECL(sbc, cp_cpc_sbc_sub, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT | INST_FLAG_SUB)
@@ -1221,6 +1317,14 @@ INLINE_INST_DECL(st, uint8_t r)
 	_avr_set_ram(avr, x, vd);
 	if (op == 1) x++;
 	_avr_set_r16le_hl(avr, r, x);
+}
+
+INST_DECL(swap)
+{
+	get_vd5(opcode);
+	uint8_t res = (vd >> 4) | (vd << 4) ;
+	STATE("swap %s[%02x] = %02x\n", avr_regname(d), vd, res);
+	_avr_set_r(avr, d, res);
 }
 
 INST_DECL(wdr)
@@ -1414,89 +1518,16 @@ run_one_again:
 						// STS -- Store Direct to Data Space, 32 bits -- 1001 0010 0000 0000
 						INST_ESAC(0x9200, 0xfe0f, lds_sts)
 
-						case 0x900f: {	// POP -- 1001 000d dddd 1111
-							get_d5(opcode);
-							_avr_set_r(avr, d, _avr_pop8(avr));
-							T(uint16_t sp = _avr_sp_get(avr);)
-							STATE("pop %s (@%04x)[%02x]\n", avr_regname(d), sp, avr->data[sp]);
-							cycle++;
-						}	break;
-						case 0x920f: {	// PUSH -- 1001 001d dddd 1111
-							get_vd5(opcode);
-							_avr_push8(avr, vd);
-							T(uint16_t sp = _avr_sp_get(avr);)
-							STATE("push %s[%02x] (@%04x)\n", avr_regname(d), vd, sp);
-							cycle++;
-						}	break;
-						case 0x9400: {	// COM -- One’s Complement -- 1001 010d dddd 0000
-							get_vd5(opcode);
-							uint8_t res = 0xff - vd;
-							STATE("com %s[%02x] = %02x\n", avr_regname(d), vd, res);
-							_avr_set_r(avr, d, res);
-							_avr_flags_znv0s(avr, res);
-							avr->sreg[S_C] = 1;
-							SREG();
-						}	break;
-						case 0x9401: {	// NEG -- Two’s Complement -- 1001 010d dddd 0001
-							get_vd5(opcode);
-							uint8_t res = 0x00 - vd;
-							STATE("neg %s[%02x] = %02x\n", avr_regname(d), vd, res);
-							_avr_set_r(avr, d, res);
-							avr->sreg[S_H] = ((res >> 3) | (vd >> 3)) & 1;
-							avr->sreg[S_V] = res == 0x80;
-							avr->sreg[S_C] = res != 0;
-							_avr_flags_zns(avr, res);
-							SREG();
-						}	break;
-						case 0x9402: {	// SWAP -- Swap Nibbles -- 1001 010d dddd 0010
-							get_vd5(opcode);
-							uint8_t res = (vd >> 4) | (vd << 4) ;
-							STATE("swap %s[%02x] = %02x\n", avr_regname(d), vd, res);
-							_avr_set_r(avr, d, res);
-						}	break;
-						case 0x9403: {	// INC -- Increment -- 1001 010d dddd 0011
-							get_vd5(opcode);
-							uint8_t res = vd + 1;
-							STATE("inc %s[%02x] = %02x\n", avr_regname(d), vd, res);
-							_avr_set_r(avr, d, res);
-							avr->sreg[S_V] = res == 0x80;
-							_avr_flags_zns(avr, res);
-							SREG();
-						}	break;
-						case 0x9405: {	// ASR -- Arithmetic Shift Right -- 1001 010d dddd 0101
-							get_vd5(opcode);
-							uint8_t res = (vd >> 1) | (vd & 0x80);
-							STATE("asr %s[%02x]\n", avr_regname(d), vd);
-							_avr_set_r(avr, d, res);
-							_avr_flags_zcnvs(avr, res, vd);
-							SREG();
-						}	break;
-						case 0x9406: {	// LSR -- Logical Shift Right -- 1001 010d dddd 0110
-							get_vd5(opcode);
-							uint8_t res = vd >> 1;
-							STATE("lsr %s[%02x]\n", avr_regname(d), vd);
-							_avr_set_r(avr, d, res);
-							avr->sreg[S_N] = 0;
-							_avr_flags_zcvs(avr, res, vd);
-							SREG();
-						}	break;
-						case 0x9407: {	// ROR -- Rotate Right -- 1001 010d dddd 0111
-							get_vd5(opcode);
-							uint8_t res = (avr->sreg[S_C] ? 0x80 : 0) | vd >> 1;
-							STATE("ror %s[%02x]\n", avr_regname(d), vd);
-							_avr_set_r(avr, d, res);
-							_avr_flags_zcnvs(avr, res, vd);
-							SREG();
-						}	break;
-						case 0x940a: {	// DEC -- Decrement -- 1001 010d dddd 1010
-							get_vd5(opcode);
-							uint8_t res = vd - 1;
-							STATE("dec %s[%02x] = %02x\n", avr_regname(d), vd, res);
-							_avr_set_r(avr, d, res);
-							avr->sreg[S_V] = res == 0x7f;
-							_avr_flags_zns(avr, res);
-							SREG();
-						}	break;
+						INST_ESAC(0x900f, 0xfe0f, pop) // POP -- 0x900f -- 1001 000d dddd 1111
+						INST_ESAC(0x920f, 0xfe0f, push) // PUSH -- 0x920f -- 1001 001d dddd 1111
+						INST_ESAC(0x9400, 0xfe0f, com) // COM -- 0x9400 -- One’s Complement -- 1001 010d dddd 0000
+						INST_ESAC(0x9401, 0xfe0f, neg) // NEG -- 0x9401 -- Two’s Complement -- 1001 010d dddd 0001
+						INST_ESAC(0x9402, 0xfe0f, swap) // SWAP -- 0x9402 -- Swap Nibbles -- 1001 010d dddd 0010
+						INST_ESAC(0x9403, 0xfe0f, inc) // INC -- 0x9403 -- Increment -- 1001 010d dddd 0011
+						INST_ESAC(0x9405, 0xfe0f, asr) // ASR -- 0x9405 -- Arithmetic Shift Right -- 1001 010d dddd 0101
+						INST_ESAC(0x9406, 0xfe0f, lsr) // LSR -- 0x9406 -- Logical Shift Right -- 1001 010d dddd 0110
+						INST_ESAC(0x9407, 0xfe0f, ror) // ROR -- 0x9407 -- Rotate Right -- 1001 010d dddd 0111
+						INST_ESAC(0x940a, 0xfe0f, dec) // DEC -- 0x940a -- Decrement -- 1001 010d dddd 1010
 
 						// JMP -- 0x940c/0x940d -- Long Call to sub, 32 bits -- 1001 010a aaaa 110a
 						INST_ESAC(0x940c, 0xfe0f, call_jmp_long)
