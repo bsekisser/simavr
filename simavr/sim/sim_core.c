@@ -750,6 +750,29 @@ INLINE_INST_DECL(h4k8_alu_logic, const uint8_t operation, const uint16_t flags)
 INST_SUB_CALL_DECL(addc, addc_add, INST_FLAG_ADD | INST_FLAG_CARRY)
 INST_SUB_CALL_DECL(add, addc_add, INST_FLAG_ADD)
 
+INLINE_INST_DECL(adiw_sbiw)
+{
+	get_vp2_k6(opcode);
+	uint16_t res = vp;
+	int add = (opcode & 0x0100) == 0;
+	if (add)
+		res += k;
+	else
+		res -= k;
+	STATE("%s %s:%s[%04x], 0x%02x\n", add ? "adiw" : "sbiw", avr_regname(p), avr_regname(p + 1), vp, k);
+	_avr_set_r16le_hl(avr, p, res);
+	if(add) {
+		avr->sreg[S_V] = ((~vp & res) >> 15) & 1;
+		avr->sreg[S_C] = ((~res & vp) >> 15) & 1;
+	} else {
+		avr->sreg[S_V] = ((vp & ~res) >> 15) & 1;
+		avr->sreg[S_C] = ((res & ~vp) >> 15) & 1;
+	}
+	_avr_flags_zns16(avr, res);
+	SREG();
+	(*cycle)++;
+}
+
 INST_DECL(and)
 {
 	get_vd5_vr5(opcode);
@@ -1086,6 +1109,15 @@ INST_DECL(mov)
 	_avr_set_r(avr, d, res);
 }
 
+INST_DECL(movw)
+{
+	uint8_t d = ((opcode >> 4) & 0xf) << 1;
+	uint8_t r = ((opcode) & 0xf) << 1;
+	uint16_t vr = _avr_data_read16le(avr, r);
+	STATE("movw %s:%s, %s:%s[%04x]\n", avr_regname(d), avr_regname(d+1), avr_regname(r), avr_regname(r+1), vr);
+	_avr_set_r16le(avr, d, vr);
+}
+
 INST_DECL(mul)
 {
 	get_vd5_vr5(opcode);
@@ -1389,12 +1421,7 @@ run_one_again:
 						INST_ESAC(0x0800, 0xfc00, sbc) // SBC -- 0x0800 -- Subtract with carry -- 0000 10rd dddd rrrr
 						default:
 							switch (opcode & 0xff00) {
-								case 0x0100: {	// MOVW -- Copy Register Word -- 0000 0001 dddd rrrr
-									uint8_t d = ((opcode >> 4) & 0xf) << 1;
-									uint8_t r = ((opcode) & 0xf) << 1;
-									STATE("movw %s:%s, %s:%s[%02x%02x]\n", avr_regname(d), avr_regname(d+1), avr_regname(r), avr_regname(r+1), avr->data[r+1], avr->data[r]);
-									_avr_set_r16le(avr, d, _avr_data_read16le(avr, r));
-								}	break;
+								INST_ESAC(0x0100, 0xff00, movw) // MOVW -- 0x0100 -- Copy Register Word -- 0000 0001 dddd rrrr
 								INST_ESAC(0x0200, 0xff00, muls) // MULS -- 0x0200 -- Multiply Signed -- 0000 0010 dddd rrrr
 								INST_ESAC(0x0300, 0xff00, mul_complex) // MUL -- 0x0300 -- Multiply -- 0000 0011 fddd frrr
 								default: _avr_invalid_opcode(avr);
@@ -1539,28 +1566,8 @@ run_one_again:
 
 						default: {
 							switch (opcode & 0xff00) {
-								case 0x9600: {	// ADIW -- Add Immediate to Word -- 1001 0110 KKpp KKKK
-									get_vp2_k6(opcode);
-									uint16_t res = vp + k;
-									STATE("adiw %s:%s[%04x], 0x%02x\n", avr_regname(p), avr_regname(p + 1), vp, k);
-									_avr_set_r16le_hl(avr, p, res);
-									avr->sreg[S_V] = ((~vp & res) >> 15) & 1;
-									avr->sreg[S_C] = ((~res & vp) >> 15) & 1;
-									_avr_flags_zns16(avr, res);
-									SREG();
-									cycle++;
-								}	break;
-								case 0x9700: {	// SBIW -- Subtract Immediate from Word -- 1001 0111 KKpp KKKK
-									get_vp2_k6(opcode);
-									uint16_t res = vp - k;
-									STATE("sbiw %s:%s[%04x], 0x%02x\n", avr_regname(p), avr_regname(p + 1), vp, k);
-									_avr_set_r16le_hl(avr, p, res);
-									avr->sreg[S_V] = ((vp & ~res) >> 15) & 1;
-									avr->sreg[S_C] = ((res & ~vp) >> 15) & 1;
-									_avr_flags_zns16(avr, res);
-									SREG();
-									cycle++;
-								}	break;
+								INST_ESAC(0x9600, 0xff00, adiw_sbiw) // ADIW -- 0x9600 -- Add Immediate to Word -- 1001 0110 KKpp KKKK
+								INST_ESAC(0x9700, 0xff00, adiw_sbiw) // SBIW -- 0x9700 -- Subtract Immediate from Word -- 1001 0111 KKpp KKKK
 								INST_ESAC(0x9800, 0xff00,  cbi_sbi) // CBI -- 0x9800 -- Clear Bit in I/O Register -- 1001 1000 AAAA Abbb
 								INST_ESAC(0x9900, 0xff00, sbic_sbis) // SBIC -- 0x9900 -- Skip if Bit in I/O Register is Cleared -- 1001 1001 AAAA Abbb
 								INST_ESAC(0x9a00, 0xff00, cbi_sbi) // SBI -- 0x9a00 -- Set Bit in I/O Register -- 1001 1010 AAAA Abbb
