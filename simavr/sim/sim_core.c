@@ -766,6 +766,23 @@ INST_DECL(and)
 
 INST_SUB_CALL_DECL(andi, h4k8_alu_logic, INST_FLAG_AND, INST_FLAG_AND | INST_FLAG_SAVE_RESULT)
 
+INLINE_INST_DECL(bld_bst)
+{
+	get_vd5_s3_mask(opcode);
+	int store = opcode & 0x0200;
+	
+	if (!store) {
+		uint8_t v = (vd & ~mask) | (avr->sreg[S_T] ? mask : 0);
+		STATE("bld %s[%02x], 0x%02x = %02x\n", avr_regname(d), vd, mask, v);
+		_avr_set_r(avr, d, v);
+	} else {
+		STATE("bst %s[%02x], 0x%02x\n", avr_regname(d), vd, 1 << s);
+		avr->sreg[S_T] = (vd >> s) & 1;
+	}
+	
+	SREG();
+}
+
 INST_DECL(break)
 {
 	STATE("break\n");
@@ -776,6 +793,27 @@ INST_DECL(break)
 		avr->state = cpu_StepDone;
 		*new_pc = avr->pc;
 		*cycle = 0;
+	}
+}
+
+INLINE_INST_DECL(brxc_brxs)
+{
+	int16_t o = ((int16_t)(opcode << 6)) >> 9; // offset
+	uint8_t s = opcode & 7;
+	int set = (opcode & 0x0400) == 0;		// this bit means BRXC otherwise BRXS
+	int branch = (avr->sreg[s] && set) || (!avr->sreg[s] && !set);
+	const char *names[2][8] = {
+			{ "brcc", "brne", "brpl", "brvc", NULL, "brhc", "brtc", "brid"},
+			{ "brcs", "breq", "brmi", "brvs", NULL, "brhs", "brts", "brie"},
+	};
+	if (names[set][s]) {
+		STATE("%s .%d [%04x]\t; Will%s branch\n", names[set][s], o, *new_pc + (o << 1), branch ? "":" not");
+	} else {
+		STATE("%s%c .%d [%04x]\t; Will%s branch\n", set ? "brbs" : "brbc", _sreg_bit_name[s], o, *new_pc + (o << 1), branch ? "":" not");
+	}
+	if (branch) {
+		(*cycle)++; // 2 cycles if taken, 1 otherwise
+		*new_pc = *new_pc + (o << 1);
 	}
 }
 
@@ -1109,6 +1147,13 @@ INST_DECL(spm)
 	avr_ioctl(avr, AVR_IOCTL_FLASH_SPM, 0);
 }
 
+INLINE_INST_DECL(sreg_cl_se)
+{
+	get_sreg_bit(opcode);
+	STATE("%s%c\n", opcode & 0x0080 ? "cl" : "se", _sreg_bit_name[b]);
+	avr_sreg_set(avr, b, (opcode & 0x0080) == 0);
+	SREG();
+}
 
 INLINE_INST_DECL(st, uint8_t r)
 {
@@ -1295,10 +1340,11 @@ run_one_again:
 		case 0x9000: {
 			/* this is an annoying special case, but at least these lines handle all the SREG set/clear opcodes */
 			if ((opcode & 0xff0f) == 0x9408) {
-				get_sreg_bit(opcode);
-				STATE("%s%c\n", opcode & 0x0080 ? "cl" : "se", _sreg_bit_name[b]);
-				avr_sreg_set(avr, b, (opcode & 0x0080) == 0);
-				SREG();
+				INST_CALL(sreg_cl_se);
+				if (0) switch(opcode & 0x9488) {
+					INST_ESAC(0x9408, 0xff8f, sreg_cl_se)
+					INST_ESAC(0x9488, 0xff8f, sreg_cl_se)
+				}
 			} else switch (opcode) {
 				INST_ESAC(0x9588, 0xffff, sleep) // SLEEP -- 1001 0101 1000 1000
 				INST_ESAC(0x9598, 0xffff, break) // BREAK -- 1001 0101 1001 1000
@@ -1509,42 +1555,20 @@ run_one_again:
 
 		case 0xf000: {
 			switch (opcode & 0xfe00) {
-				case 0xf000:
-				case 0xf200:
-				case 0xf400:
-				case 0xf600: {	// BRXC/BRXS -- All the SREG branches -- 1111 0Boo oooo osss
-					int16_t o = ((int16_t)(opcode << 6)) >> 9; // offset
-					uint8_t s = opcode & 7;
-					int set = (opcode & 0x0400) == 0;		// this bit means BRXC otherwise BRXS
-					int branch = (avr->sreg[s] && set) || (!avr->sreg[s] && !set);
-					const char *names[2][8] = {
-							{ "brcc", "brne", "brpl", "brvc", NULL, "brhc", "brtc", "brid"},
-							{ "brcs", "breq", "brmi", "brvs", NULL, "brhs", "brts", "brie"},
-					};
-					if (names[set][s]) {
-						STATE("%s .%d [%04x]\t; Will%s branch\n", names[set][s], o, new_pc + (o << 1), branch ? "":" not");
-					} else {
-						STATE("%s%c .%d [%04x]\t; Will%s branch\n", set ? "brbs" : "brbc", _sreg_bit_name[s], o, new_pc + (o << 1), branch ? "":" not");
-					}
-					if (branch) {
-						cycle++; // 2 cycles if taken, 1 otherwise
-						new_pc = new_pc + (o << 1);
-					}
-				}	break;
-				case 0xf800:
-				case 0xf900: {	// BLD -- Bit Store from T into a Bit in Register -- 1111 100d dddd 0bbb
-					get_vd5_s3_mask(opcode);
-					uint8_t v = (vd & ~mask) | (avr->sreg[S_T] ? mask : 0);
-					STATE("bld %s[%02x], 0x%02x = %02x\n", avr_regname(d), vd, mask, v);
-					_avr_set_r(avr, d, v);
-				}	break;
-				case 0xfa00:
-				case 0xfb00:{	// BST -- Bit Store into T from bit in Register -- 1111 101d dddd 0bbb
-					get_vd5_s3(opcode)
-					STATE("bst %s[%02x], 0x%02x\n", avr_regname(d), vd, 1 << s);
-					avr->sreg[S_T] = (vd >> s) & 1;
-					SREG();
-				}	break;
+				// BRXC/BRXS -- All the SREG branches -- 1111 0Boo oooo osss
+				INST_ESAC(0xf000, 0xfe00, brxc_brxs)
+				INST_ESAC(0xf200, 0xfe00, brxc_brxs)
+				INST_ESAC(0xf400, 0xfe00, brxc_brxs)
+				INST_ESAC(0xf600, 0xfe00, brxc_brxs)
+
+				// BLD -- 0xf800/0xf900 -- Bit Store from T into a Bit in Register -- 1111 100d dddd 0bbb
+				INST_ESAC(0xf800, 0xfe00, bld_bst)
+				INST_ESAC(0xf900, 0xfe00, bld_bst)
+
+				// BST -- 0xfa00/0xfb00 -- Bit Store into T from bit in Register -- 1111 101d dddd 0bbb
+				INST_ESAC(0xfa00, 0xfe00, bld_bst)
+				INST_ESAC(0xfb00, 0xfe00, bld_bst)
+
 				// SBRS/SBRC -- Skip if Bit in Register is Set/Clear -- 1111 11sd dddd 0bbb
 				INST_ESAC(0xfc00, 0xfe00, sbrc_sbrs)
 				INST_ESAC(0xfe00, 0xfe00, sbrc_sbrs)
