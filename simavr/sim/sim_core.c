@@ -625,23 +625,135 @@ static inline int _avr_is_instruction_32_bits(avr_t * avr, avr_flashaddr_t pc)
 		INST_SUB_CALL(_subcall_opname, ## _args); \
 	}
 
+#define INLINE_INST_SUB_CALL_DECL(_opname, _subcall_opname, _args...) \
+	INLINE_INST INST_SUB_CALL_DECL(_opname, _subcall_opname, ## _args)
+
 #define INST_ESAC(_opcode, _opmask, _opname, _args...) \
 	case _opcode: INST_CALL(_opname, ## _args); break;
 
 enum {
-	INST_FLAG_NONE = 0,
-	INST_FLAG_ADD,
-	INST_FLAG_AND,
-	INST_FLAG_EOR,
-	INST_FLAG_OR,
-	INST_FLAG_SUB,
+	INST_OP_NONE = 0,
+	INST_OP_ADD,
+	INST_OP_AND,
+	INST_OP_EOR,
+	INST_OP_OR,
+	INST_OP_SUB,
 };
 
-#define INST_FLAG_MASK_OP ((1 << 8) - 1)
-#define INST_FLAG_MASK_FLAG (((uint16_t)-1) & ~INST_FLAG_MASK_OP)
+#define INST_FLAG_CARRY (1 << 0)
+#define INST_FLAG_SAVE_RESULT (1 << 1)
 
-#define INST_FLAG_CARRY (1 << 8)
-#define INST_FLAG_SAVE_RESULT (1 << 9)
+INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags, uint8_t r0, uint8_t vr0, uint8_t r1, uint8_t vr1)
+{
+	uint8_t res = vr0;
+	int carry = flags & INST_FLAG_CARRY;
+	
+	switch (operation) {
+		case	INST_OP_ADD:
+			res += vr1 + (carry ? avr->sreg[S_C] : 0);
+			break;
+		case	INST_OP_AND:
+			res &= vr1;
+			break;
+		case	INST_OP_EOR:
+			res ^= vr1;
+			break;
+		case	INST_OP_NONE: {
+				printf("%s: opcode = %04x, operation = %02x, flags = %04x\n", 
+					__FUNCTION__, opcode, operation, flags);
+		} break;
+		case	INST_OP_OR:
+			res |= vr1;
+			break;
+		case	INST_OP_SUB:
+			res -= vr1 + (carry ? avr->sreg[S_C] : 0);
+			break;
+	}
+
+	int save_result = flags & INST_FLAG_SAVE_RESULT;
+
+	int trace = 0;
+	T(trace = 1);
+	if (trace) {
+		switch (operation) {
+			case	INST_OP_ADD: {
+				if (r0 == r1) {
+					STATE("%s %s[%02x] = %02x\n", carry ? "rol" : "lsl" , avr_regname(r0), vr0, res);
+				} else {
+					STATE("%s %s[%02x], %s[%02x] = %02x\n", carry ? "addc" : "add",
+						avr_regname(r0), vr0, avr_regname(r1), vr1, res);
+				}
+			} break;
+			case INST_OP_AND: {
+				if (r0 == r1) {
+					STATE("tst %s[%02x]\n", avr_regname(r0), vr0);
+				} else {
+					if (r1 != 0xff) {
+						STATE("and %s[%02x], %s[%02x] = %02x\n", avr_regname(r0), vr0, avr_regname(r1), vr1, res);
+					} else {
+						STATE("andi %s[%02x], %02x = %02x\n", avr_regname(r0), vr0, vr1, res);
+					}
+				}
+			} break;
+			case INST_OP_EOR: {
+				if (r0 == r1) {
+					STATE("clr %s[%02x]\n", avr_regname(r0), vr0);
+				} else {
+					STATE("eor %s[%02x], %s[%02x] = %02x\n", avr_regname(r0), vr0, avr_regname(r0), vr1, res);
+				}
+			} break;
+			case INST_OP_NONE: {
+			} break;
+			case INST_OP_OR: {
+				if (r1 != 0xff) {
+					STATE("or %s[%02x], %s[%02x] = %02x\n", avr_regname(r0), vr0, avr_regname(r1), vr1, res);
+				} else {
+					STATE("ori %s[%02x], %02x = %02x\n", avr_regname(r0), vr0, vr1, res);
+				}
+			} break;
+			case INST_OP_SUB: {
+				if (r1 != 0xff) {
+					T((const char * opname[2][2] = { { "cp", "cpc" }, { "sub", "sbc" } };))
+					STATE("%s %s[%02x], %s[%02x] = %02x\n",
+						opname[save_result][carry], 
+						avr_regname(r0), vr0, avr_regname(r1), vr1, res);
+				} else {
+					T((const char *opname = { { "cpi", "" }, { "subi", "sbci" } };))
+					STATE("%s %s[%02x], %s[%02x] = %02x\n",
+						opname[save_result][carry], 
+						avr_regname(r0), vr0, avr_regname(r1), vr1, res);
+				}
+					
+			} break;
+		}
+	}
+
+	if (save_result)
+		_avr_set_r(avr, r0, res);
+
+	switch (operation) {
+		case INST_OP_ADD:
+			_avr_flags_add_zns(avr, res, vr0, vr1);
+			break;
+		case INST_OP_AND:
+		case INST_OP_EOR:
+		case INST_OP_OR:
+			_avr_flags_znv0s(avr, res);
+			break;
+		case INST_OP_NONE:
+			break;
+		case INST_OP_SUB:
+			if (carry)
+				_avr_flags_sub_Rzns(avr, res, vr0, vr1);
+			else
+				_avr_flags_sub_zns(avr, res, vr0, vr1);
+			break;
+	}
+
+	if (operation) {
+		SREG();
+	}
+}
 
 INLINE_INST_DECL(skip_if, uint16_t res)
 {
@@ -654,101 +766,20 @@ INLINE_INST_DECL(skip_if, uint16_t res)
 	}
 }
 
-INLINE_INST_DECL(addc_add, const uint16_t flags)
+INLINE_INST_DECL(d5r5_common_helper, const uint8_t operation, const uint8_t flags)
 {
 	get_vd5_vr5(opcode);
-	uint8_t res = vd + vr;
-
-	if (flags & INST_FLAG_CARRY)
-		res += avr->sreg[S_C];
-
-	if (r == d) {
-		STATE("%s %s[%02x] = %02x\n", carry ? "rol" : "lsl" , avr_regname(d), vd, res);
-	} else {
-		STATE("%s %s[%02x], %s[%02x] = %02x\n", carry ? "addc" : "add",
-			avr_regname(d), vd, avr_regname(r), vr, res);
-	}
-	_avr_set_r(avr, d, res);
-	_avr_flags_add_zns(avr, res, vd, vr);
-	SREG();
+	INST_SUB_CALL(alu_common_helper, operation, flags, d, vd, r, vr);
 }
 
-INLINE_INST_DECL(h4k8_alu_logic, const uint8_t operation, const uint16_t flags)
+INLINE_INST_DECL(h4k8_common_helper, const uint8_t operation, const uint8_t flags)
 {
 	get_vh4_k8(opcode);
-	uint8_t res;
-
-	int save_result = flags & INST_FLAG_SAVE_RESULT;
-
-	switch (operation) {
-		case INST_FLAG_AND:
-			res = vh & k;
-			break;
-		case INST_FLAG_OR:
-			res = vh | k;
-			break;
-		case INST_FLAG_SUB:
-			res = vh - k - ((flags & INST_FLAG_CARRY) ? avr->sreg[S_C] : 0);
-			break;
-		case INST_FLAG_NONE:
-			res = k;
-	}
-
-	int trace = 0;
-	T(trace = 1;)
-
-	char *opname; (void)opname; // (void) quiets compiler when not used
-
-	if(trace) {
-		switch(flags)	{
-			case INST_FLAG_AND:
-				opname = "andi";
-				break;
-			case INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT | INST_FLAG_SUB:
-				opname = "sbci";
-				break;
-			case INST_FLAG_OR:
-				opname = "ori";
-				break;
-			case INST_FLAG_SAVE_RESULT | INST_FLAG_SUB:
-				opname = "subi";
-				break;
-			case INST_FLAG_SUB:
-				opname = "cpi";
-				break;
-			case INST_FLAG_NONE:
-				opname = "ldi";
-				break;
-		}
-	}		
-
-	if ((operation == INST_FLAG_SUB) && save_result) {
-		STATE("%s %s[%02x], 0x%02x = %02x\n", opname, avr_regname(h), vh, k, res);
-	} else {
-		if(operation)
-			STATE("%s %s[%02x], 0x%02x\n", opname, avr_regname(h), vh, k);
-		else
-			STATE("ldi %s, 0x%02x\n", avr_regname(h), k);
-	}
-
-	if (save_result)
-		_avr_set_r(avr, h, res);
-
-	if (operation == INST_FLAG_SUB) {
-		if(flags & INST_FLAG_CARRY)
-			_avr_flags_sub_Rzns(avr, res, vh, k);
-		else
-			_avr_flags_sub_zns(avr, res, vh, k);
-	} else if (operation) 
-		_avr_flags_znv0s(avr, res);
-
-	if (operation) {
-		SREG();
-	}
+	INST_SUB_CALL(alu_common_helper, operation, flags, h, vh, -1, k);
 }
 
-INST_SUB_CALL_DECL(addc, addc_add, INST_FLAG_ADD | INST_FLAG_CARRY)
-INST_SUB_CALL_DECL(add, addc_add, INST_FLAG_ADD)
+INLINE_INST_SUB_CALL_DECL(addc, d5r5_common_helper, INST_OP_ADD, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT)
+INLINE_INST_SUB_CALL_DECL(add, d5r5_common_helper, INST_OP_ADD, INST_FLAG_SAVE_RESULT)
 
 INLINE_INST_DECL(adiw_sbiw)
 {
@@ -773,21 +804,8 @@ INLINE_INST_DECL(adiw_sbiw)
 	(*cycle)++;
 }
 
-INST_DECL(and)
-{
-	get_vd5_vr5(opcode);
-	uint8_t res = vd & vr;
-	if (r == d) {
-		STATE("tst %s[%02x]\n", avr_regname(d), vd);
-	} else {
-		STATE("and %s[%02x], %s[%02x] = %02x\n", avr_regname(d), vd, avr_regname(r), vr, res);
-	}
-	_avr_set_r(avr, d, res);
-	_avr_flags_znv0s(avr, res);
-	SREG();
-}
-
-INST_SUB_CALL_DECL(andi, h4k8_alu_logic, INST_FLAG_AND, INST_FLAG_AND | INST_FLAG_SAVE_RESULT)
+INLINE_INST_SUB_CALL_DECL(and, d5r5_common_helper, INST_OP_AND, INST_FLAG_SAVE_RESULT)
+INST_SUB_CALL_DECL(andi, h4k8_common_helper, INST_OP_AND, INST_FLAG_SAVE_RESULT)
 
 INST_DECL(asr)
 {
@@ -909,31 +927,9 @@ INST_DECL(com)
 	SREG();
 }
 
-INLINE_INST_DECL(cp_cpc_sbc_sub, const uint16_t flags)
-{
-	get_vd5_vr5(opcode);
-	uint8_t res = vd - vr;
-
-	if (flags & INST_FLAG_CARRY)
-		res -= avr->sreg[S_C];
-
-	T((const char * opname[2][2] = { { "cp", "cpc" }, { "sub", "sbc" } };))
-	STATE("%s %s[%02x], %s[%02x] = %02x\n", opname[save_result][carry], avr_regname(d), vd, avr_regname(r), vr, res);
-
-	if (flags & INST_FLAG_SAVE_RESULT)
-		_avr_set_r(avr, d, res);
-
-	if (flags & INST_FLAG_CARRY)
-		_avr_flags_sub_Rzns(avr, res, vd, vr);
-	else
-		_avr_flags_sub_zns(avr, res, vd, vr);
-		
-	SREG();
-}
-
-INST_SUB_CALL_DECL(cp, cp_cpc_sbc_sub, INST_FLAG_SUB)
-INST_SUB_CALL_DECL(cpc, cp_cpc_sbc_sub, INST_FLAG_CARRY | INST_FLAG_SUB)
-INST_SUB_CALL_DECL(cpi, h4k8_alu_logic, INST_FLAG_SUB, INST_FLAG_SUB)
+INLINE_INST_SUB_CALL_DECL(cp, d5r5_common_helper, INST_OP_SUB, INST_OP_NONE)
+INLINE_INST_SUB_CALL_DECL(cpc, d5r5_common_helper, INST_OP_SUB, INST_FLAG_CARRY)
+INLINE_INST_SUB_CALL_DECL(cpi, h4k8_common_helper, INST_OP_SUB, INST_OP_NONE)
 
 INST_DECL(cpse)
 {
@@ -954,19 +950,7 @@ INST_DECL(dec)
 	SREG();
 }
 
-INST_DECL(eor)
-{
-	get_vd5_vr5(opcode);
-	uint8_t res = vd ^ vr;
-	if (r==d) {
-		STATE("clr %s[%02x]\n", avr_regname(d), vd);
-	} else {
-		STATE("eor %s[%02x], %s[%02x] = %02x\n", avr_regname(d), vd, avr_regname(r), vr, res);
-	}
-	_avr_set_r(avr, d, res);
-	_avr_flags_znv0s(avr, res);
-	SREG();
-}
+INLINE_INST_SUB_CALL_DECL(eor, d5r5_common_helper, INST_OP_EOR, INST_FLAG_SAVE_RESULT)
 
 INLINE_INST_DECL(in_out)
 {
@@ -1006,7 +990,12 @@ INLINE_INST_DECL(ld, uint8_t r)
 	_avr_set_r(avr, d, vd);
 }
 
-INST_SUB_CALL_DECL(ldi, h4k8_alu_logic, INST_FLAG_NONE, INST_FLAG_NONE | INST_FLAG_SAVE_RESULT)
+INLINE_INST_DECL(ldi)
+{
+	get_h4_k8(opcode);
+	STATE("ldi %s, 0x%02x\n", avr_regname(h), k);
+	_avr_set_r(avr, h, k);
+}
 
 INLINE_INST_DECL(ldd_std, uint8_t r)
 {
@@ -1201,17 +1190,8 @@ INST_DECL(nop)
 	STATE("nop\n");
 }
 
-INST_DECL(or)
-{
-	get_vd5_vr5(opcode);
-	uint8_t res = vd | vr;
-	STATE("or %s[%02x], %s[%02x] = %02x\n", avr_regname(d), vd, avr_regname(r), vr, res);
-	_avr_set_r(avr, d, res);
-	_avr_flags_znv0s(avr, res);
-	SREG();
-}
-
-INST_SUB_CALL_DECL(ori, h4k8_alu_logic, INST_FLAG_OR, INST_FLAG_OR | INST_FLAG_SAVE_RESULT)
+INLINE_INST_SUB_CALL_DECL(or, d5r5_common_helper, INST_OP_OR, INST_FLAG_SAVE_RESULT)
+INLINE_INST_SUB_CALL_DECL(ori, h4k8_common_helper, INST_OP_OR, INST_FLAG_SAVE_RESULT)
 
 INST_DECL(pop)
 {
@@ -1282,8 +1262,8 @@ INST_DECL(ror)
 	SREG();
 }
 
-INST_SUB_CALL_DECL(sbc, cp_cpc_sbc_sub, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT | INST_FLAG_SUB)
-INST_SUB_CALL_DECL(sbci, h4k8_alu_logic, INST_FLAG_SUB, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT | INST_FLAG_SUB)
+INST_SUB_CALL_DECL(sbc, d5r5_common_helper, INST_OP_SUB, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT)
+INST_SUB_CALL_DECL(sbci, h4k8_common_helper, INST_OP_SUB, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT)
 
 INLINE_INST_DECL(skip_io_r_logic, uint8_t rio, uint8_t vrio, uint8_t mask, char *opname_array[2])
 {
@@ -1308,8 +1288,8 @@ INLINE_INST_DECL(sbrc_sbrs)
 	INST_SUB_CALL(skip_io_r_logic, d, vd, mask, opname_array);
 }
 
-INST_SUB_CALL_DECL(sub, cp_cpc_sbc_sub, INST_FLAG_SAVE_RESULT | INST_FLAG_SUB)
-INST_SUB_CALL_DECL(subi, h4k8_alu_logic, INST_FLAG_SUB, INST_FLAG_SAVE_RESULT | INST_FLAG_SUB)
+INST_SUB_CALL_DECL(sub, d5r5_common_helper, INST_OP_SUB, INST_FLAG_SAVE_RESULT)
+INST_SUB_CALL_DECL(subi, h4k8_common_helper, INST_OP_SUB, INST_FLAG_SAVE_RESULT)
 
 INST_DECL(sleep)
 {
