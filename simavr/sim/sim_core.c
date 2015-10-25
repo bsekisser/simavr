@@ -101,10 +101,27 @@ void crash(avr_t* avr)
 	avr_sadly_crashed(avr, 0);
 }
 #else
-#define T(w)
-#define REG_TOUCH(a, r)
-#define STATE(_f, args...)
-#define SREG()
+	#if 1
+		#define T(w)
+		#define REG_TOUCH(a, r)
+		#define STATE(_f, args...)
+		#define SREG()
+	#else
+		#define T(w) w
+		#define REG_TOUCH(a, r)
+		#define STATE(_f, args...) \
+			do { \
+				printf("%04x: " _f, avr->pc, ## args); \
+			} while (0);
+	
+		#define SREG() \
+			do { \
+				printf("%04x: \t\t\t\t\t\t\t\t\tSREG = ", avr->pc); \
+				for (int _sbi = 0; _sbi < 8; _sbi++)\
+					printf("%c", avr->sreg[_sbi] ? toupper(_sreg_bit_name[_sbi]) : '.');\
+				printf("\n");\
+			} while (0);
+	#endif
 
 void crash(avr_t* avr)
 {
@@ -119,6 +136,23 @@ _avr_data_read16le(
 {
 	uint16_t retval = avr->data[addr] | (avr->data[addr + 1] << 8);
 	return retval;
+}
+
+static inline uint32_t
+_avr_extend_flash_read32le(
+	avr_t * avr,
+	avr_flashaddr_t addr)
+{
+	uint32_t retval = avr->extend_flash[addr >> 1];
+	return retval;
+}
+
+static inline void
+_avr_extend_flash_write32le(
+	avr_t * avr,
+	avr_flashaddr_t addr,  uint32_t value)
+{
+	avr->extend_flash[addr >> 1] = value;
 }
 
 static inline uint16_t
@@ -599,6 +633,18 @@ static inline int _avr_is_instruction_32_bits(avr_t * avr, avr_flashaddr_t pc)
 			o == 0x940f; // CALL Long Call to sub
 }
 
+typedef void (*avr_inst_pfn)(
+	avr_t * avr,
+	uint32_t opcode,
+	uint16_t * cycle,
+	avr_flashaddr_t * new_pc);
+
+#define PFN_CALL(_pfn) \
+	_pfn(avr, opcode, &cycle, &new_pc);
+
+#define PFN_SUB_CALL(_pfn) \
+	_pfn(avr, opcode, cycle, new_pc);
+
 #define INST_SUB_CALL(_opname, _args...) \
 	_avr_inst_ ## _opname(avr, opcode, cycle, new_pc, ## _args)
 
@@ -628,8 +674,116 @@ static inline int _avr_is_instruction_32_bits(avr_t * avr, avr_flashaddr_t pc)
 #define INLINE_INST_SUB_CALL_DECL(_opname, _subcall_opname, _args...) \
 	INLINE_INST INST_SUB_CALL_DECL(_opname, _subcall_opname, ## _args)
 
+#define INST_MASK_ABS22		0xfe0e
+#define INST_MASK_ALL		0xffff
+#define INST_MASK_A5B3		0xff00
+#define INST_MASK_D4R4		0xff00
+#define INST_MASK_D5		0xfe0f
+#define INST_MASK_D5A6		0xf800
+#define INST_MASK_D5B3		0xfc08
+#define INST_MASK_D5rYZ		0xd200
+#define INST_MASK_D5R5		0xfc00
+#define INST_MASK_H4K8		0xf000
+#define INST_MASK_NONE		0x0000
+#define INST_MASK_O7S3		0xf800
+#define INST_MASK_O12		0xe000
+#define INST_MASK_P2K6		0xff00
+#define INST_MASK_SREG		0xff8f
+
+#define INST_ESAC_TABLE \
+	INST_ESAC(0x0000, ALL, nop) /* NOP */\
+	INST_ESAC(0x0100, D4R4, movw) /* MOVW -- 0x0100 -- Copy Register Word -- 0000 0001 dddd rrrr */\
+	INST_ESAC(0x0200, D4R4, muls) /* MULS -- 0x0200 -- Multiply Signed -- 0000 0010 dddd rrrr */\
+	INST_ESAC(0x0300, D4R4, mul_complex) /* MUL -- 0x0300 -- Multiply -- 0000 0011 fddd frrr */\
+	INST_ESAC(0x0400, D5R5, cpc) /* CPC -- 0x0400 -- Compare with carry -- 0000 01rd dddd rrrr */\
+	INST_ESAC(0x0c00, D5R5, add) /* ADD -- 0x0c00 -- Add without carry -- 0000 11rd dddd rrrr */\
+	INST_ESAC(0x0800, D5R5, sbc) /* SBC -- 0x0800 -- Subtract with carry -- 0000 10rd dddd rrrr */\
+	INST_ESAC(0x1000, D5R5, cpse) /* CPSE -- 0x1000 -- Compare, skip if equal -- 0001 00rd dddd rrrr */\
+	INST_ESAC(0x1400, D5R5, cp) /* CP -- 0x1400 -- Compare -- 0001 01rd dddd rrrr */\
+	INST_ESAC(0x1800, D5R5, sub) /* SUB -- 0x1800-- Subtract without carry -- 0001 10rd dddd rrrr */\
+	INST_ESAC(0x1c00, D5R5, addc) /* ADD -- 0x1c00-- Add with carry -- 0001 11rd dddd rrrr */\
+	INST_ESAC(0x2000, D5R5, and) /* AND -- 0x2000 -- Logical AND -- 0010 00rd dddd rrrr */\
+	INST_ESAC(0x2400, D5R5, eor) /* EOR -- 0x2400 -- Logical Exclusive OR -- 0010 01rd dddd rrrr */\
+	INST_ESAC(0x2800, D5R5, or) /* OR -- 0x2800 -- Logical OR -- 0010 10rd dddd rrrr */\
+	INST_ESAC(0x2c00, D5R5, mov) /* MOV -- 0x2c00 -- 0010 11rd dddd rrrr */\
+	INST_ESAC(0x3000, H4K8, cpi) /* CPI -- 0x3000 -- Compare Immediate -- 0011 kkkk hhhh kkkk */\
+	INST_ESAC(0x4000, H4K8, sbci) /* SBCI -- 0x4000-- Subtract Immediate With Carry -- 0100 kkkk hhhh kkkk */\
+	INST_ESAC(0x5000, H4K8, subi) /* SUBI -- 0x5000 -- Subtract Immediate -- 0101 kkkk hhhh kkkk */\
+	INST_ESAC(0x6000, H4K8, ori) /* ORI aka SBR -- 0x6000 -- Logical OR with Immediate -- 0110 kkkk hhhh kkkk */\
+	INST_ESAC(0x7000, H4K8, andi) /* ANDI	-- 0x7000 -- Logical AND with Immediate -- 0111 kkkk hhhh kkkk */\
+	INST_ESAC(0x8000, D5rYZ, ldd_std) /* LD (LDD) -- Load Indirect -- 10q0 qqsd dddd yqqq */\
+	INST_ESAC(0x8200, D5rYZ, ldd_std) /* ST (STD) -- Store Indirect -- 10q0 qqsd dddd yqqq */\
+	INST_ESAC(0x9000, D5, lds_sts) /* LDS -- 0x9000 -- Load Direct from Data Space, 32 bits -- 1001 0000 0000 0000 */\
+	INST_ESAC(0x9001, D5, ld) /* LD -- 0x9001 -- Load Indirect from Data using Z -- 1001 00sd dddd 00oo */\
+	INST_ESAC(0x9002, D5, ld) /* LD -- 0x9002 -- Load Indirect from Data using Z -- 1001 00sd dddd 00oo */\
+	INST_ESAC(0x9004, D5, lpm) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
+	INST_ESAC(0x9005, D5, lpm) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
+	INST_ESAC(0x9009, D5, ld) /* LD -- Load Indirect from Data using Y -- 1001 000d dddd 10oo */\
+	INST_ESAC(0x900a, D5, ld) /* LD -- Load Indirect from Data using Y -- 1001 000d dddd 10oo */\
+	INST_ESAC(0x900c, D5, ld) /* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
+	INST_ESAC(0x900d, D5, ld) /* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
+	INST_ESAC(0x900e, D5, ld) /* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
+	INST_ESAC(0x900f, D5, pop) /* POP -- 0x900f -- 1001 000d dddd 1111 */\
+	INST_ESAC(0x9200, D5, lds_sts) /* STS -- Store Direct to Data Space, 32 bits -- 1001 0010 0000 0000 */\
+	INST_ESAC(0x9201, D5, st) /* ST -- Store Indirect Data Space Z -- 1001 001d dddd 00oo */\
+	INST_ESAC(0x9202, D5, st) /* ST -- Store Indirect Data Space Z -- 1001 001d dddd 00oo */\
+	INST_ESAC(0x9209, D5, st) /* ST -- Store Indirect Data Space Y -- 1001 001d dddd 10oo */\
+	INST_ESAC(0x920a, D5, st) /* ST -- Store Indirect Data Space Y -- 1001 001d dddd 10oo */\
+	INST_ESAC(0x920c, D5, st) /* ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo */\
+	INST_ESAC(0x920d, D5, st) /* ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo */\
+	INST_ESAC(0x920e, D5, st) /* ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo */\
+	INST_ESAC(0x920f, D5, push) /* PUSH -- 0x920f -- 1001 001d dddd 1111 */\
+	INST_ESAC(0x9400, D5, com) /* COM -- 0x9400 -- One’s Complement -- 1001 010d dddd 0000 */\
+	INST_ESAC(0x9401, D5, neg) /* NEG -- 0x9401 -- Two’s Complement -- 1001 010d dddd 0001 */\
+	INST_ESAC(0x9402, D5, swap) /* SWAP -- 0x9402 -- Swap Nibbles -- 1001 010d dddd 0010 */\
+	INST_ESAC(0x9403, D5, inc) /* INC -- 0x9403 -- Increment -- 1001 010d dddd 0011 */\
+	INST_ESAC(0x9405, D5, asr) /* ASR -- 0x9405 -- Arithmetic Shift Right -- 1001 010d dddd 0101 */\
+	INST_ESAC(0x9406, D5, lsr) /* LSR -- 0x9406 -- Logical Shift Right -- 1001 010d dddd 0110 */\
+	INST_ESAC(0x9407, D5, ror) /* ROR -- 0x9407 -- Rotate Right -- 1001 010d dddd 0111 */\
+	INST_ESAC(0x9408, SREG, sreg_cl_se) /* SET -- 0x9408 -- Set SREG Bit -- 1001 0100 Bbbb 1000 */\
+	INST_ESAC(0x9409, ALL, call_jmp_ei) /* IJMP --0x9409 -- Indirect jump -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x940a, D5, dec) /* DEC -- 0x940a -- Decrement -- 1001 010d dddd 1010 */\
+	INST_ESAC(0x940c, ABS22, call_jmp_long) /* LJMP -- 0x940c -- Long Call to sub, 32 bits -- 1001 010a aaaa 11ca */\
+	INST_ESAC(0x940e, ABS22, call_jmp_long) /* LCALL -- 0x940e -- Long Call to sub, 32 bits -- 1001 010a aaaa 11ca */\
+	INST_ESAC(0x9419, ALL, call_jmp_ei) /* EIJMP -- 0x9419 -- Indirect jump -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9488, SREG, sreg_cl_se) /* CLR -- 0x9408 -- Set SREG Bit -- 1001 0100 Bbbb 1000 */\
+	INST_ESAC(0x9508, ALL, ret) /* RET -- 0x9508 -- Return -- 1001 0101 0000 1000 */\
+	INST_ESAC(0x9509, ALL, call_jmp_ei) /* ICALL -- 0x9509 -- Indirect Call to Subroutine -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9518, ALL, reti) /* RETI -- 0x9518 -- Return from Interrupt -- 1001 0101 0001 1000 */\
+	INST_ESAC(0x9519, ALL, call_jmp_ei) /* EICALL -- 0x9519 -- Indirect Call to Subroutine -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9588, ALL, sleep) /* SLEEP -- 0x9588 -- 1001 0101 1000 1000 */\
+	INST_ESAC(0x9598, ALL, break) /* BREAK -- 0x9598 -- 1001 0101 1001 1000 */\
+	INST_ESAC(0x95a8, ALL, wdr) /* WDR -- 0x95a8 -- Watchdog Reset -- 1001 0101 1010 1000 */\
+	INST_ESAC(0x95c8, ALL, lpm) /* LPM -- 0x95c8 -- Load Program Memory R0 <- (Z) -- 1001 0101 1100 1000 */\
+	INST_ESAC(0x95e8, ALL, spm) /* SPM -- 0x95e8 -- Store Program Memory -- 1001 0101 1110 1000 */\
+	INST_ESAC(0x9600, P2K6, adiw_sbiw) /* ADIW -- 0x9600 -- Add Immediate to Word -- 1001 0110 KKpp KKKK */\
+	INST_ESAC(0x9700, P2K6, adiw_sbiw) /* SBIW -- 0x9700 -- Subtract Immediate from Word -- 1001 0111 KKpp KKKK */\
+	INST_ESAC(0x9800, A5B3, cbi_sbi) /* CBI -- 0x9800 -- Clear Bit in I/O Register -- 1001 1000 AAAA Abbb */\
+	INST_ESAC(0x9900, A5B3, sbic_sbis) /* SBIC -- 0x9900 -- Skip if Bit in I/O Register is Cleared -- 1001 1001 AAAA Abbb */\
+	INST_ESAC(0x9a00, A5B3, cbi_sbi) /* SBI -- 0x9a00 -- Set Bit in I/O Register -- 1001 1010 AAAA Abbb */\
+	INST_ESAC(0x9b00, A5B3, sbic_sbis) /* SBIS -- 0x9b00 -- Skip if Bit in I/O Register is Set -- 1001 1011 AAAA Abbb */\
+	INST_ESAC(0x9c00, D5R5, mul) /* MUL -- 0x9c00 -- Multiply Unsigned -- 1001 11rd dddd rrrr */\
+	INST_ESAC(0xb800, D5A6, in_out) /* OUT A,Rr -- 0xb800 -- 1011 1AAd dddd AAAA */\
+	INST_ESAC(0xb000, D5A6, in_out) /* IN Rd,A -- 0xb000 -- 1011 0AAd dddd AAAA */\
+	INST_ESAC(0xc000, O12, r_call_jmp) /* RJMP -- 0xc000 -- 1100 kkkk kkkk kkkk */\
+	INST_ESAC(0xd000, O12, r_call_jmp) /* RCALL -- 0xd000 -- 1101 kkkk kkkk kkkk */\
+	INST_ESAC(0xe000, H4K8, ldi) /* LDI Rd, K aka SER (LDI r, 0xff) -- 0xe000 -- 1110 kkkk dddd kkkk */\
+	INST_ESAC(0xf000, O7S3, brxc_brxs) /* BRXC/BRXS -- 0xf00 -- All the SREG branches -- 1111 0Boo oooo osss */\
+	INST_ESAC(0xf600, O7S3, brxc_brxs) /* BRXC/BRXS -- 0xf60 -- All the SREG branches -- 1111 0Boo oooo osss */\
+	INST_ESAC(0xf800, D5B3, bld_bst) /* BST -- 0xf800 -- Bit Store from T into a Bit in Register -- 1111 10sd dddd 0bbb */\
+	INST_ESAC(0xfa00, D5B3, bld_bst) /* BLD -- 0xfa00 -- Bit Store from T into a Bit in Register -- 1111 10sd dddd 0bbb */\
+	INST_ESAC(0xfc00, D5B3, sbrc_sbrs) /* SBRS/SBRC -- Skip if Bit in Register is Set/Clear -- 1111 11sd dddd 0bbb */\
+	INST_ESAC(0xfe00, D5B3, sbrc_sbrs) /* SBRS/SBRC -- Skip if Bit in Register is Set/Clear -- 1111 11sd dddd 0bbb */\
+	INST_ESAC(0x0000, NONE, invalid_opcode)
+	
+#undef INST_ESAC
 #define INST_ESAC(_opcode, _opmask, _opname, _args...) \
-	case _opcode: INST_CALL(_opname, ## _args); break;
+	_avr_inst_ ## _opcode ## _ ##  _opname,
+
+enum {
+	INST_ESAC_NONE = 0,
+	INST_ESAC_TABLE
+};
 
 enum {
 	INST_OP_NONE = 0,
@@ -712,18 +866,21 @@ INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags
 				}
 			} break;
 			case INST_OP_SUB: {
+				T(char *opname;)
 				if (r1 != 0xff) {
-					T((const char * opname[2][2] = { { "cp", "cpc" }, { "sub", "sbc" } };))
-					STATE("%s %s[%02x], %s[%02x] = %02x\n",
-						opname[save_result][carry], 
-						avr_regname(r0), vr0, avr_regname(r1), vr1, res);
+					T(opname = save_result ? 
+						(carry ? "sbc" : "sub") :
+						(carry ? "cpc" : "cp");)
+					STATE("%s %s[%02x], %s:%02x[%02x] = %02x\n",
+						opname, avr_regname(r0), vr0, 
+						avr_regname(r1), r1, vr1, res);
 				} else {
-					T((const char *opname = { { "cpi", "" }, { "subi", "sbci" } };))
-					STATE("%s %s[%02x], %s[%02x] = %02x\n",
-						opname[save_result][carry], 
-						avr_regname(r0), vr0, avr_regname(r1), vr1, res);
+					T(opname = save_result ? 
+						(carry ? "sbci" : "subi") :
+						(carry ? "" : "cpi");)
+					STATE("%s %s[%02x], %02x = %02x\n",
+						opname, avr_regname(r0), vr0, vr1, res);
 				}
-					
 			} break;
 		}
 	}
@@ -892,7 +1049,7 @@ INLINE_INST_DECL(call_jmp_long)
 	avr_flashaddr_t a = ((opcode & 0x01f0) >> 3) | (opcode & 1);
 	uint16_t x = _avr_flash_read16le(avr, *new_pc);
 	a = (a << 16) | x;
-	STATE("call 0x%06x\n", push ? "call" : "jmp", a);
+	STATE("%s 0x%06x\n", push ? "call" : "jmp", a);
 	if (push)
 		*cycle += 1 + _avr_push_addr(avr, *new_pc + 2);
 	else
@@ -974,19 +1131,25 @@ INST_DECL(inc)
 	SREG();
 }
 
-INLINE_INST_DECL(ld, uint8_t r)
+INST_DECL(invalid_opcode)
+{
+	_avr_invalid_opcode(avr);
+}
+
+INLINE_INST_DECL(ld)
 {
 	int op = opcode & 3;
 	get_d5(opcode);
-	uint16_t x = _avr_data_read16le(avr, r);
+	uint8_t  rXYZ = ((uint8_t []){R_ZL, 0x00, R_YL, R_XL})[(opcode & 0x000c)>>2];
+	uint16_t vXYZ = _avr_data_read16le(avr, rXYZ);
 	STATE("ld %s, %s%c[%04x]%s\n", 
 		avr_regname(d), op == 2 ? "--" : "", 
-		*avr_regname(r), x, op == 1 ? "++" : "");
+		*avr_regname(rXYZ), vXYZ, op == 1 ? "++" : "");
 	(*cycle)++; // 2 cycles (1 for tinyavr, except with inc/dec 2)
-	if (op == 2) x--;
-	uint8_t vd = _avr_get_ram(avr, x);
-	if (op == 1) x++;
-	_avr_set_r16le_hl(avr, r, x);
+	if (op == 2) vXYZ--;
+	uint8_t vd = _avr_get_ram(avr, vXYZ);
+	if (op == 1) vXYZ++;
+	_avr_set_r16le_hl(avr, rXYZ, vXYZ);
 	_avr_set_r(avr, d, vd);
 }
 
@@ -997,21 +1160,22 @@ INLINE_INST_DECL(ldi)
 	_avr_set_r(avr, h, k);
 }
 
-INLINE_INST_DECL(ldd_std, uint8_t r)
+INLINE_INST_DECL(ldd_std)
 {
-	uint16_t v = _avr_data_read16le(avr, r);
+	uint8_t  rYZ = (opcode & 0x0008) ? R_YL : R_ZL;
+	uint16_t vYZ = _avr_data_read16le(avr, rYZ);
 	get_d5_q6(opcode);
 	if (opcode & 0x0200) {
 		uint8_t vd = avr->data[d];
 		STATE("st (%c+%d[%04x]), %s[%02x]\n", 
-			*avr_regname(r), q, v+q, 
+			*avr_regname(rYZ), q, vYZ+q, 
 			avr_regname(d), vd);
-		_avr_set_ram(avr, v+q, vd);
+		_avr_set_ram(avr, vYZ+q, vd);
 	} else {
-		uint8_t vvr = _avr_get_ram(avr, v+q);
+		uint8_t vvr = _avr_get_ram(avr, vYZ+q);
 		STATE("ld %s, (%c+%d[%04x])=[%02x]\n", 
-			avr_regname(d), *avr_regname(r), 
-			q, v+q, vvr);
+			avr_regname(d), *avr_regname(rYZ), 
+			q, vYZ+q, vvr);
 		_avr_set_r(avr, d, vvr);
 	}
 	(*cycle)++; // 2 cycles, 3 for tinyavr
@@ -1218,7 +1382,7 @@ INLINE_INST_DECL(r_call_jmp)
 
 	int push = opcode & 0x1000;
 
-	STATE("%s .%d [%04x]\n", push ? "rcall" : "rjmp", o >> 1, new_pc + o);
+	STATE("%s .%d [%04x]\n", push ? "rcall" : "rjmp", o >> 1, *new_pc + o);
 
 	if(push)
 		*cycle += _avr_push_addr(avr, *new_pc);
@@ -1316,19 +1480,20 @@ INLINE_INST_DECL(sreg_cl_se)
 	SREG();
 }
 
-INLINE_INST_DECL(st, uint8_t r)
+INLINE_INST_DECL(st)
 {
 	int op = opcode & 3;
 	get_vd5(opcode);
-	uint16_t x = _avr_data_read16le(avr, r);
+	uint8_t  rXYZ = ((uint8_t []){R_ZL, 0x00, R_YL, R_XL})[(opcode & 0x000c)>>2];
+	uint16_t vXYZ = _avr_data_read16le(avr, rXYZ);
 	STATE("st %s%c[%04x]%s, %s[%02x] \n", 
-		op == 2 ? "--" : "", *avr_regname(r), x, 
+		op == 2 ? "--" : "", *avr_regname(rXYZ), vXYZ, 
 		op == 1 ? "++" : "", avr_regname(d), vd);
 	(*cycle)++; // 2 cycles, except tinyavr
-	if (op == 2) x--;
-	_avr_set_ram(avr, x, vd);
-	if (op == 1) x++;
-	_avr_set_r16le_hl(avr, r, x);
+	if (op == 2) vXYZ--;
+	_avr_set_ram(avr, vXYZ, vd);
+	if (op == 1) vXYZ++;
+	_avr_set_r16le_hl(avr, rXYZ, vXYZ);
 }
 
 INST_DECL(swap)
@@ -1344,6 +1509,34 @@ INST_DECL(wdr)
 	STATE("wdr\n");
 	avr_ioctl(avr, AVR_IOCTL_WATCHDOG_RESET, 0);
 }
+
+typedef struct avr_inst_decode_elem_t {
+	uint16_t opcode;
+	uint16_t mask;
+	avr_inst_pfn pfn;
+	char *opname;
+}avr_inst_decode_elem_t, *avr_inst_decode_elem_p;
+
+#undef INST_ESAC
+#define INST_ESAC(_opcode, _opmask, _opname, _args...) \
+	{ _opcode, INST_MASK_ ## _opmask, _avr_inst_ ## _opname, #_opname },
+
+INST_DECL(decode_one);
+static avr_inst_decode_elem_t _avr_inst_opcode_table[] =  {
+	{ -1, -1, _avr_inst_decode_one , "" },
+	INST_ESAC_TABLE
+	{ -1, -1, 0 , "" }
+};
+
+#define IF_OP(_opcode, _opmask) \
+	if ((0 == extend_opcode) && (_opcode) == (opcode & (_opmask)))
+
+#undef INST_ESAC
+#define INST_ESAC(_opcode, _opmask, _opname) \
+	IF_OP(_opcode, INST_MASK_ ## _opmask) { \
+		extend_opcode = ((_avr_inst_ ## _opcode ## _ ## _opname) << 24) | opcode; \
+		INST_SUB_CALL(_opname); \
+	}
 
 /*
  * Main opcode decoder
@@ -1362,6 +1555,23 @@ INST_DECL(wdr)
  * The number of cycles taken by instruction has been added, but might not be
  * entirely accurate.
  */
+ 
+INST_DECL(decode_one)
+{
+	uint32_t extend_opcode = 0;
+
+	opcode = _avr_flash_read16le(avr, avr->pc);
+
+	INST_ESAC_TABLE
+		;
+
+	if (extend_opcode)
+		_avr_extend_flash_write32le(avr, avr->pc, extend_opcode);
+	else
+		printf("%s: %06x, %04x, %08x >> not translated.\n", 
+			__FUNCTION__, avr->pc, opcode, extend_opcode);
+}
+
 avr_flashaddr_t avr_run_one(avr_t * avr)
 {
 run_one_again:
@@ -1386,225 +1596,15 @@ run_one_again:
 		return 0;
 	}
 
-	uint32_t		opcode = _avr_flash_read16le(avr, avr->pc);
-	avr_flashaddr_t	new_pc = avr->pc + 2;	// future "default" pc
+	uint32_t		extend_opcode = _avr_extend_flash_read32le(avr, avr->pc);
+	avr_flashaddr_t		new_pc = avr->pc + 2;	// future "default" pc
 	uint16_t		cycle = 1;
 
-	switch (opcode & 0xf000) {
-		case 0x0000: {
-			switch (opcode) {
-				INST_ESAC(0x0000, 0xffff, nop)	// NOP
-				default: {
-					switch (opcode & 0xfc00) {
-						INST_ESAC(0x0400, 0xfc00, cpc) // CPC -- 0x0400 -- Compare with carry -- 0000 01rd dddd rrrr
-						INST_ESAC(0x0c00, 0xfc00, add) // ADD -- 0x0c00 -- Add without carry -- 0000 11rd dddd rrrr
-						INST_ESAC(0x0800, 0xfc00, sbc) // SBC -- 0x0800 -- Subtract with carry -- 0000 10rd dddd rrrr
-						default:
-							switch (opcode & 0xff00) {
-								INST_ESAC(0x0100, 0xff00, movw) // MOVW -- 0x0100 -- Copy Register Word -- 0000 0001 dddd rrrr
-								INST_ESAC(0x0200, 0xff00, muls) // MULS -- 0x0200 -- Multiply Signed -- 0000 0010 dddd rrrr
-								INST_ESAC(0x0300, 0xff00, mul_complex) // MUL -- 0x0300 -- Multiply -- 0000 0011 fddd frrr
-								default: _avr_invalid_opcode(avr);
-							}
-					}
-				}
-			}
-		}	break;
+	uint16_t opcode = extend_opcode & 0xffff;
+	PFN_CALL(_avr_inst_opcode_table[extend_opcode >> 24].pfn);
 
-		case 0x1000:
-		case 0x2000: {
-			switch (opcode & 0xfc00) {
-				INST_ESAC(0x1000, 0xfc00, cpse) // CPSE -- 0x1000 -- Compare, skip if equal -- 0001 00rd dddd rrrr
-				INST_ESAC(0x1400, 0xfc00, cp) // CP -- 0x1400 -- Compare -- 0001 01rd dddd rrrr
-				INST_ESAC(0x1800, 0xfc00, sub) // SUB -- 0x1800-- Subtract without carry -- 0001 10rd dddd rrrr
-				INST_ESAC(0x1c00, 0xfc00, addc) // ADD -- 0x1c00-- Add with carry -- 0001 11rd dddd rrrr
-				INST_ESAC(0x2000, 0xfc00, and) // AND -- 0x2000 -- Logical AND -- 0010 00rd dddd rrrr
-				INST_ESAC(0x2400, 0xfc00, eor) // EOR -- 0x2400 -- Logical Exclusive OR -- 0010 01rd dddd rrrr
-				INST_ESAC(0x2800, 0xfc00, or) // OR -- 0x2800 -- Logical OR -- 0010 10rd dddd rrrr
-				INST_ESAC(0x2c00, 0xfc00, mov) // MOV -- 0x2c00 -- 0010 11rd dddd rrrr
-				default: _avr_invalid_opcode(avr);
-			}
-		}	break;
-
-		INST_ESAC(0x3000, 0xf000, cpi) // CPI -- 0x3000 -- Compare Immediate -- 0011 kkkk hhhh kkkk
-		INST_ESAC(0x4000, 0xf000, sbci) // SBCI -- 0x4000-- Subtract Immediate With Carry -- 0100 kkkk hhhh kkkk
-		INST_ESAC(0x5000, 0xf000, subi) // SUBI -- 0x5000 -- Subtract Immediate -- 0101 kkkk hhhh kkkk
-		INST_ESAC(0x6000, 0xf000, ori) // ORI aka SBR -- 0x6000 -- Logical OR with Immediate -- 0110 kkkk hhhh kkkk
-		INST_ESAC(0x7000, 0xf000, andi) // ANDI	-- 0x7000 -- Logical AND with Immediate -- 0111 kkkk hhhh kkkk
-
-		case 0xa000:
-		case 0x8000: {
-			/*
-			 * Load (LDD/STD) store instructions
-			 *
-			 * 10q0 qqsd dddd yqqq
-			 * s = 0 = load, 1 = store
-			 * y = 16 bits register index, 1 = Y, 0 = X
-			 * q = 6 bit displacement
-			 */
-			switch (opcode & 0xd008) {
-				// LD (LDD) -- Load Indirect using Z -- 10q0 qqsd dddd yqqq
-				INST_ESAC(0x8000, 0xd008, ldd_std, R_ZL)
-				INST_ESAC(0xa000, 0xd008, ldd_std, R_ZL)
-
-				// LD (LDD) -- Load Indirect using Y -- 10q0 qqsd dddd yqqq
-				INST_ESAC(0x8008, 0xd008, ldd_std, R_YL)
-				INST_ESAC(0xa008, 0xd008, ldd_std, R_YL)
-				default: _avr_invalid_opcode(avr);
-			}
-		}	break;
-
-		case 0x9000: {
-			/* this is an annoying special case, but at least these lines handle all the SREG set/clear opcodes */
-			if ((opcode & 0xff0f) == 0x9408) {
-				INST_CALL(sreg_cl_se);
-				if (0) switch(opcode & 0x9488) {
-					INST_ESAC(0x9408, 0xff8f, sreg_cl_se)
-					INST_ESAC(0x9488, 0xff8f, sreg_cl_se)
-				}
-			} else switch (opcode) {
-				INST_ESAC(0x9588, 0xffff, sleep) // SLEEP -- 1001 0101 1000 1000
-				INST_ESAC(0x9598, 0xffff, break) // BREAK -- 1001 0101 1001 1000
-				INST_ESAC(0x95a8, 0xffff, wdr) // WDR -- Watchdog Reset -- 1001 0101 1010 1000
-				INST_ESAC(0x95e8, 0xffff, spm) // SPM -- Store Program Memory -- 1001 0101 1110 1000
-				INST_ESAC(0x9508, 0xffff, ret) // RET -- Return -- 1001 0101 0000 1000
-				INST_ESAC(0x9518, 0xffff, reti) // RETI -- Return from Interrupt -- 1001 0101 0001 1000
-				INST_ESAC(0x95c8, 0xffff, lpm) // LPM -- Load Program Memory R0 <- (Z) -- 1001 0101 1100 1000
-				INST_ESAC(0x9409, 0xffff, call_jmp_ei) // IJMP --0x9409 -- Indirect jump -- 1001 0100 0000 1001
-				INST_ESAC(0x9419, 0xffff, call_jmp_ei) // EIJMP -- 0x9419 -- Indirect jump -- 1001 0100 0001 1001   bit 4 is "indirect"
-				INST_ESAC(0x9509, 0xffff, call_jmp_ei) // ICALL -- 0x9509 -- Indirect Call to Subroutine -- 1001 0101 0000 1001
-				INST_ESAC(0x9519, 0xffff, call_jmp_ei) // EICALL -- 0x9519 -- Indirect Call to Subroutine -- 1001 0101 0001 1001   bit 8 is "push pc"
-				default:  {
-					switch (opcode & 0xfe0f) {
-						// LDS -- 0x9000 -- Load Direct from Data Space, 32 bits -- 1001 0000 0000 0000
-						INST_ESAC(0x9000, 0xfe0f, lds_sts)
-
-						// LPM -- Load Program Memory -- 1001 000d dddd 01oo
-						INST_ESAC(0x9004, 0xfe0f, lpm)
-						INST_ESAC(0x9005, 0xfe0f, lpm)
-
-						// ELPM -- Extended Load Program Memory -- 1001 000d dddd 01oo
-						INST_ESAC(0x9006, 0xfe0f, lpm)
-						INST_ESAC(0x9007, 0xfe0f, lpm)
-
-						/*
-						 * Load store instructions
-						 *
-						 * 1001 00sr rrrr iioo
-						 * s = 0 = load, 1 = store
-						 * ii = 16 bits register index, 11 = X, 10 = Y, 00 = Z
-						 * oo = 1) post increment, 2) pre-decrement
-						 */
-
-						// LD -- Load Indirect from Data using Z -- 1001 000d dddd 00oo
-						INST_ESAC(0x9001, 0xfe0f, ld, R_ZL)
-						INST_ESAC(0x9002, 0xfe0f, ld, R_ZL)
-
-						// LD -- Load Indirect from Data using Y -- 1001 000d dddd 10oo
-						INST_ESAC(0x9009, 0xfe0f, ld, R_YL)
-						INST_ESAC(0x900a, 0xfe0f, ld, R_YL)
-
-						// LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo
-						INST_ESAC(0x900c, 0xfe0f, ld, R_XL)
-						INST_ESAC(0x900d, 0xfe0f, ld, R_XL)
-						INST_ESAC(0x900e, 0xfe0f, ld, R_XL)
-
-						// ST -- Store Indirect Data Space Z -- 1001 001d dddd 00oo
-						INST_ESAC(0x9201, 0xfe0f, st, R_ZL)
-						INST_ESAC(0x9202, 0xfe0f, st, R_ZL)
-
-						// ST -- Store Indirect Data Space Y -- 1001 001d dddd 10oo
-						INST_ESAC(0x9209, 0xfe0f, st, R_YL)
-						INST_ESAC(0x920a, 0xfe0f, st, R_YL)
-
-						// ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo
-						INST_ESAC(0x920c, 0xfe0f, st, R_XL)
-						INST_ESAC(0x920d, 0xfe0f, st, R_XL)
-						INST_ESAC(0x920e, 0xfe0f, st, R_XL)
-
-						// STS -- Store Direct to Data Space, 32 bits -- 1001 0010 0000 0000
-						INST_ESAC(0x9200, 0xfe0f, lds_sts)
-
-						INST_ESAC(0x900f, 0xfe0f, pop) // POP -- 0x900f -- 1001 000d dddd 1111
-						INST_ESAC(0x920f, 0xfe0f, push) // PUSH -- 0x920f -- 1001 001d dddd 1111
-						INST_ESAC(0x9400, 0xfe0f, com) // COM -- 0x9400 -- One’s Complement -- 1001 010d dddd 0000
-						INST_ESAC(0x9401, 0xfe0f, neg) // NEG -- 0x9401 -- Two’s Complement -- 1001 010d dddd 0001
-						INST_ESAC(0x9402, 0xfe0f, swap) // SWAP -- 0x9402 -- Swap Nibbles -- 1001 010d dddd 0010
-						INST_ESAC(0x9403, 0xfe0f, inc) // INC -- 0x9403 -- Increment -- 1001 010d dddd 0011
-						INST_ESAC(0x9405, 0xfe0f, asr) // ASR -- 0x9405 -- Arithmetic Shift Right -- 1001 010d dddd 0101
-						INST_ESAC(0x9406, 0xfe0f, lsr) // LSR -- 0x9406 -- Logical Shift Right -- 1001 010d dddd 0110
-						INST_ESAC(0x9407, 0xfe0f, ror) // ROR -- 0x9407 -- Rotate Right -- 1001 010d dddd 0111
-						INST_ESAC(0x940a, 0xfe0f, dec) // DEC -- 0x940a -- Decrement -- 1001 010d dddd 1010
-
-						// JMP -- 0x940c/0x940d -- Long Call to sub, 32 bits -- 1001 010a aaaa 110a
-						INST_ESAC(0x940c, 0xfe0f, call_jmp_long)
-						INST_ESAC(0x940d, 0xfe0f, call_jmp_long)
-
-						// CALL -- 0x940e/0x940f -- Long Call to sub, 32 bits -- 1001 010a aaaa 111a
-						INST_ESAC(0x940e, 0xfe0f, call_jmp_long)
-						INST_ESAC(0x940f, 0xfe0f, call_jmp_long)
-
-						default: {
-							switch (opcode & 0xff00) {
-								INST_ESAC(0x9600, 0xff00, adiw_sbiw) // ADIW -- 0x9600 -- Add Immediate to Word -- 1001 0110 KKpp KKKK
-								INST_ESAC(0x9700, 0xff00, adiw_sbiw) // SBIW -- 0x9700 -- Subtract Immediate from Word -- 1001 0111 KKpp KKKK
-								INST_ESAC(0x9800, 0xff00,  cbi_sbi) // CBI -- 0x9800 -- Clear Bit in I/O Register -- 1001 1000 AAAA Abbb
-								INST_ESAC(0x9900, 0xff00, sbic_sbis) // SBIC -- 0x9900 -- Skip if Bit in I/O Register is Cleared -- 1001 1001 AAAA Abbb
-								INST_ESAC(0x9a00, 0xff00, cbi_sbi) // SBI -- 0x9a00 -- Set Bit in I/O Register -- 1001 1010 AAAA Abbb
-								INST_ESAC(0x9b00, 0xff00, sbic_sbis) // SBIS -- 0x9b00 -- Skip if Bit in I/O Register is Set -- 1001 1011 AAAA Abbb
-								default:
-									switch (opcode & 0xfc00) {
-										INST_ESAC(0x9c00, 0xfc00, mul) // MUL -- 0x9c00 -- Multiply Unsigned -- 1001 11rd dddd rrrr
-										default: _avr_invalid_opcode(avr);
-									}
-							}
-						}	break;
-					}
-				}	break;
-			}
-		}	break;
-
-		case 0xb000: {
-			switch (opcode & 0xf800) {
-				INST_ESAC(0xb800, 0xf800, in_out) // OUT A,Rr -- 0xb800 -- 1011 1AAd dddd AAAA
-				INST_ESAC(0xb000, 0xf800, in_out) // IN Rd,A -- 0xb000 -- 1011 0AAd dddd AAAA
-				default: _avr_invalid_opcode(avr);
-			}
-		}	break;
-
-		INST_ESAC(0xc000, 0fx000, r_call_jmp) // RJMP -- 0xc000 -- 1100 kkkk kkkk kkkk
-		INST_ESAC(0xd000, 0xf000, r_call_jmp) // RCALL -- 0xd000 -- 1101 kkkk kkkk kkkk
-
-		INST_ESAC(0xe000, 0xf000, ldi) // LDI Rd, K aka SER (LDI r, 0xff) -- 0xe000 -- 1110 kkkk dddd kkkk
-
-		case 0xf000: {
-			switch (opcode & 0xfe00) {
-				// BRXC/BRXS -- All the SREG branches -- 1111 0Boo oooo osss
-				INST_ESAC(0xf000, 0xfe00, brxc_brxs)
-				INST_ESAC(0xf200, 0xfe00, brxc_brxs)
-				INST_ESAC(0xf400, 0xfe00, brxc_brxs)
-				INST_ESAC(0xf600, 0xfe00, brxc_brxs)
-
-				// BLD -- 0xf800/0xf900 -- Bit Store from T into a Bit in Register -- 1111 100d dddd 0bbb
-				INST_ESAC(0xf800, 0xfe00, bld_bst)
-				INST_ESAC(0xf900, 0xfe00, bld_bst)
-
-				// BST -- 0xfa00/0xfb00 -- Bit Store into T from bit in Register -- 1111 101d dddd 0bbb
-				INST_ESAC(0xfa00, 0xfe00, bld_bst)
-				INST_ESAC(0xfb00, 0xfe00, bld_bst)
-
-				// SBRS/SBRC -- Skip if Bit in Register is Set/Clear -- 1111 11sd dddd 0bbb
-				INST_ESAC(0xfc00, 0xfe00, sbrc_sbrs)
-				INST_ESAC(0xfe00, 0xfe00, sbrc_sbrs)
-				default: _avr_invalid_opcode(avr);
-			}
-		}	break;
-
-		default: _avr_invalid_opcode(avr);
-
-	}
 	avr->cycle += cycle;
-	
+
 	if ((avr->state == cpu_Running) && 
 		(avr->run_cycle_count > cycle) && 
 		(avr->interrupt_state == 0))
