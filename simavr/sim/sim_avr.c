@@ -70,6 +70,8 @@ int avr_init(avr_t * avr)
 {
 	avr->flash = malloc(avr->flashend + 1);
 	memset(avr->flash, 0xff, avr->flashend + 1);
+	avr->extend_flash = malloc((avr->flashend + 1) << 2);
+	memset(avr->extend_flash, 0x00, (avr->flashend + 1) << 2);
 	avr->codeend = avr->flashend;
 	avr->data = malloc(avr->ramend + 1);
 	memset(avr->data, 0, avr->ramend + 1);
