@@ -279,6 +279,8 @@ typedef struct avr_t {
 
 	// flash memory (initialized to 0xff, and code loaded into it)
 	uint8_t *	flash;
+	// flash extension for translated instructions
+	uint32_t *	extend_flash;
 	// this is the general purpose registers, IO registers, and SRAM
 	uint8_t *	data;
 
