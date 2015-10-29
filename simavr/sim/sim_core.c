@@ -437,12 +437,9 @@ void avr_dump_state(avr_t * avr)
 		get_d5(o); \
 		const uint8_t A = ((((o >> 9) & 3) << 4) | ((o) & 0xf)) + 32;
 
-#define get_vd5_s3(o) \
-		get_vd5(o); \
-		const uint8_t s = o & 7;
-
 #define get_vd5_s3_mask(o) \
 		get_vd5_s3(o); \
+		const uint8_t s = o & 7; \
 		const uint8_t mask = 1 << s;
 		
 #define get_vd5_vr5(o) \
@@ -469,10 +466,6 @@ void avr_dump_state(avr_t * avr)
 
 #define get_io5(o) \
 		const uint8_t io = ((o >> 3) & 0x1f) + 32;
-
-#define get_io5_b3(o) \
-		get_io5(o); \
-		const uint8_t b = o & 0x7;
 
 #define get_io5_b3mask(o) \
 		get_io5(o); \
