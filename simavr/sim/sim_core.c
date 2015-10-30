@@ -684,9 +684,8 @@ typedef void (*avr_inst_pfn)(
 #define INST_MASK_D5rYZ		0xd200
 #define INST_MASK_D5R5		0xfc00
 #define INST_MASK_H4K8		0xf000
-#define INST_MASK_NONE		0x0000
-#define INST_MASK_O7S3		0xf800
-#define INST_MASK_O12		0xe000
+#define INST_MASK_O7S3		0xfc00
+#define INST_MASK_O12		0xf000
 #define INST_MASK_P2K6		0xff00
 #define INST_MASK_SREG		0xff8f
 
@@ -696,8 +695,8 @@ typedef void (*avr_inst_pfn)(
 	INST_ESAC(0x0200, D4R4, muls) /* MULS -- 0x0200 -- Multiply Signed -- 0000 0010 dddd rrrr */\
 	INST_ESAC(0x0300, D4R4, mul_complex) /* MUL -- 0x0300 -- Multiply -- 0000 0011 fddd frrr */\
 	INST_ESAC(0x0400, D5R5, cpc) /* CPC -- 0x0400 -- Compare with carry -- 0000 01rd dddd rrrr */\
-	INST_ESAC(0x0c00, D5R5, add) /* ADD -- 0x0c00 -- Add without carry -- 0000 11rd dddd rrrr */\
 	INST_ESAC(0x0800, D5R5, sbc) /* SBC -- 0x0800 -- Subtract with carry -- 0000 10rd dddd rrrr */\
+	INST_ESAC(0x0c00, D5R5, add) /* ADD -- 0x0c00 -- Add without carry -- 0000 11rd dddd rrrr */\
 	INST_ESAC(0x1000, D5R5, cpse) /* CPSE -- 0x1000 -- Compare, skip if equal -- 0001 00rd dddd rrrr */\
 	INST_ESAC(0x1400, D5R5, cp) /* CP -- 0x1400 -- Compare -- 0001 01rd dddd rrrr */\
 	INST_ESAC(0x1800, D5R5, sub) /* SUB -- 0x1800-- Subtract without carry -- 0001 10rd dddd rrrr */\
@@ -718,6 +717,8 @@ typedef void (*avr_inst_pfn)(
 	INST_ESAC(0x9002, D5, ld) /* LD -- 0x9002 -- Load Indirect from Data using Z -- 1001 00sd dddd 00oo */\
 	INST_ESAC(0x9004, D5, lpm) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
 	INST_ESAC(0x9005, D5, lpm) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
+	INST_ESAC(0x9006, D5, lpm) /* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
+	INST_ESAC(0x9007, D5, lpm) /* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
 	INST_ESAC(0x9009, D5, ld) /* LD -- Load Indirect from Data using Y -- 1001 000d dddd 10oo */\
 	INST_ESAC(0x900a, D5, ld) /* LD -- Load Indirect from Data using Y -- 1001 000d dddd 10oo */\
 	INST_ESAC(0x900c, D5, ld) /* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
@@ -769,19 +770,18 @@ typedef void (*avr_inst_pfn)(
 	INST_ESAC(0xd000, O12, r_call_jmp) /* RCALL -- 0xd000 -- 1101 kkkk kkkk kkkk */\
 	INST_ESAC(0xe000, H4K8, ldi) /* LDI Rd, K aka SER (LDI r, 0xff) -- 0xe000 -- 1110 kkkk dddd kkkk */\
 	INST_ESAC(0xf000, O7S3, brxc_brxs) /* BRXC/BRXS -- 0xf00 -- All the SREG branches -- 1111 0Boo oooo osss */\
-	INST_ESAC(0xf600, O7S3, brxc_brxs) /* BRXC/BRXS -- 0xf60 -- All the SREG branches -- 1111 0Boo oooo osss */\
+	INST_ESAC(0xf400, O7S3, brxc_brxs) /* BRXC/BRXS -- 0xf60 -- All the SREG branches -- 1111 0Boo oooo osss */\
 	INST_ESAC(0xf800, D5B3, bld) /* BST -- 0xf800 -- Bit Store from T into a Bit in Register -- 1111 10sd dddd 0bbb */\
 	INST_ESAC(0xfa00, D5B3, bst) /* BLD -- 0xfa00 -- Bit Store from T into a Bit in Register -- 1111 10sd dddd 0bbb */\
 	INST_ESAC(0xfc00, D5B3, sbrc_sbrs) /* SBRS/SBRC -- Skip if Bit in Register is Set/Clear -- 1111 11sd dddd 0bbb */\
 	INST_ESAC(0xfe00, D5B3, sbrc_sbrs) /* SBRS/SBRC -- Skip if Bit in Register is Set/Clear -- 1111 11sd dddd 0bbb */\
-	INST_ESAC(0x0000, NONE, invalid_opcode)
 	
 #undef INST_ESAC
 #define INST_ESAC(_opcode, _opmask, _opname, _args...) \
 	_avr_inst_ ## _opcode ## _ ##  _opname,
 
 enum {
-	INST_ESAC_NONE = 0,
+	INST_ESAC_NONE = 0,  // this allows to freely pass to decoder.
 	INST_ESAC_TABLE
 };
 
@@ -976,7 +976,7 @@ INLINE_INST_DECL(call_jmp_ei, const uint8_t flags)
 	uint32_t z = _avr_data_read16le(avr, R_ZL);
 	if (e)
 		z |= avr->data[avr->eind] << 16;
-	STATE("%si%s Z[%04x]\n", e?"e":"", p?"call":"jmp", z << 1);
+	STATE("%si%s Z[%04x]\n", e ? "e":"", c ? "call":"jmp", z << 1);
 	if (c)
 		*cycle += _avr_push_addr(avr, *new_pc) - 1;
 	*new_pc = z << 1;
@@ -1200,11 +1200,6 @@ INST_DECL(inc)
 	avr->sreg[S_V] = res == 0x80;
 	_avr_flags_zns(avr, res);
 	SREG();
-}
-
-INST_DECL(invalid_opcode)
-{
-	_avr_invalid_opcode(avr);
 }
 
 INLINE_INST_DECL(ld)
@@ -1462,7 +1457,7 @@ INST_SUB_CALL_DECL(sbci, h4k8_common_helper, INST_OP_SUB, INST_FLAG_CARRY | INST
 
 INST_SUB_CALL_DECL(sbi, cbi_sbi, INST_FLAG_SET)
 
-INLINE_INST_SUB_CALL_DECL(sbiw, adiw_sbiw, INST_OP_SUB)
+INST_SUB_CALL_DECL(sbiw, adiw_sbiw, INST_OP_SUB)
 
 INLINE_INST_DECL(skip_io_r_logic, uint8_t rio, uint8_t vrio, uint8_t mask, char *opname_array[2])
 {
@@ -1562,19 +1557,38 @@ typedef struct avr_inst_decode_elem_t {
 
 INST_DECL(decode_one);
 static avr_inst_decode_elem_t _avr_inst_opcode_table[] =  {
-	{ -1, -1, _avr_inst_decode_one , "" },
+	{ -1, -1, _avr_inst_decode_one , "" }, // sometimes you can have a free lunch eh?.
 	INST_ESAC_TABLE
-	{ -1, -1, 0 , "" }
 };
 
+static void
+_avr_inst_collision_detected(
+	avr_t * avr,
+	uint16_t opcode,
+	uint16_t opmask,
+	const char * opname,
+	uint32_t extend_opcode)
+{
+	avr_inst_decode_elem_p table_elem = &_avr_inst_opcode_table[extend_opcode >> 24];
+	printf("%s:@ opcode %04x, mask %04x (%s); " 
+		"extend_opcode %08x (opcode %04x, mask %04x (%s)\n", 
+		__FUNCTION__, opcode, opmask, opname, 
+		extend_opcode, table_elem->opcode, table_elem->mask, table_elem->opname);
+}
+
 #define IF_OP(_opcode, _opmask) \
-	if ((0 == extend_opcode) && (_opcode) == (opcode & (_opmask)))
+	if ((_opcode) == (opcode & (_opmask)))
 
 #undef INST_ESAC
 #define INST_ESAC(_opcode, _opmask, _opname) \
 	IF_OP(_opcode, INST_MASK_ ## _opmask) { \
-		extend_opcode = ((_avr_inst_ ## _opcode ## _ ## _opname) << 24) | opcode; \
-		INST_SUB_CALL(_opname); \
+		invalid_opcode = 0; \
+		if (0 == extend_opcode) { \
+			extend_opcode = ((_avr_inst_ ## _opcode ## _ ## _opname) << 24) | opcode; \
+			INST_SUB_CALL(_opname); \
+		} else { \
+			_avr_inst_collision_detected(avr, opcode, INST_MASK_ ## _opmask, #_opname, extend_opcode); \
+		} \
 	}
 
 /*
@@ -1597,12 +1611,18 @@ static avr_inst_decode_elem_t _avr_inst_opcode_table[] =  {
  
 INST_DECL(decode_one)
 {
+	int collision_detected = 0, invalid_opcode = 1;
 	uint32_t extend_opcode = 0;
 
 	opcode = _avr_flash_read16le(avr, avr->pc);
 
 	INST_ESAC_TABLE
-		;
+
+	if (invalid_opcode)
+		_avr_invalid_opcode(avr);
+	
+	if (collision_detected)
+		avr->state = cpu_Done;
 
 	if (extend_opcode)
 		_avr_extend_flash_write32le(avr, avr->pc, extend_opcode);
