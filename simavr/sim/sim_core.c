@@ -680,7 +680,7 @@ typedef void (*avr_inst_pfn)(
 #define INST_MASK_D4R4		0xff00
 #define INST_MASK_D5		0xfe0f
 #define INST_MASK_D5A6		0xf800
-#define INST_MASK_D5B3		0xfc08
+#define INST_MASK_D5B3		0xfe08
 #define INST_MASK_D5rYZ		0xd200
 #define INST_MASK_D5R5		0xfc00
 #define INST_MASK_H4K8		0xf000
@@ -711,9 +711,9 @@ typedef void (*avr_inst_pfn)(
 	INST_ESAC(0x5000, H4K8, subi) /* SUBI -- 0x5000 -- Subtract Immediate -- 0101 kkkk hhhh kkkk */\
 	INST_ESAC(0x6000, H4K8, ori) /* ORI aka SBR -- 0x6000 -- Logical OR with Immediate -- 0110 kkkk hhhh kkkk */\
 	INST_ESAC(0x7000, H4K8, andi) /* ANDI	-- 0x7000 -- Logical AND with Immediate -- 0111 kkkk hhhh kkkk */\
-	INST_ESAC(0x8000, D5rYZ, ldd_std) /* LD (LDD) -- Load Indirect -- 10q0 qqsd dddd yqqq */\
-	INST_ESAC(0x8200, D5rYZ, ldd_std) /* ST (STD) -- Store Indirect -- 10q0 qqsd dddd yqqq */\
-	INST_ESAC(0x9000, D5, lds_sts) /* LDS -- 0x9000 -- Load Direct from Data Space, 32 bits -- 1001 0000 0000 0000 */\
+	INST_ESAC(0x8000, D5rYZ, ldd) /* LD (LDD) -- Load Indirect -- 10q0 qqsd dddd yqqq */\
+	INST_ESAC(0x8200, D5rYZ, std) /* ST (STD) -- Store Indirect -- 10q0 qqsd dddd yqqq */\
+	INST_ESAC(0x9000, D5, lds) /* LDS -- 0x9000 -- Load Direct from Data Space, 32 bits -- 1001 0000 0000 0000 */\
 	INST_ESAC(0x9001, D5, ld) /* LD -- 0x9001 -- Load Indirect from Data using Z -- 1001 00sd dddd 00oo */\
 	INST_ESAC(0x9002, D5, ld) /* LD -- 0x9002 -- Load Indirect from Data using Z -- 1001 00sd dddd 00oo */\
 	INST_ESAC(0x9004, D5, lpm) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
@@ -724,7 +724,7 @@ typedef void (*avr_inst_pfn)(
 	INST_ESAC(0x900d, D5, ld) /* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
 	INST_ESAC(0x900e, D5, ld) /* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
 	INST_ESAC(0x900f, D5, pop) /* POP -- 0x900f -- 1001 000d dddd 1111 */\
-	INST_ESAC(0x9200, D5, lds_sts) /* STS -- Store Direct to Data Space, 32 bits -- 1001 0010 0000 0000 */\
+	INST_ESAC(0x9200, D5, sts) /* STS -- Store Direct to Data Space, 32 bits -- 1001 0010 0000 0000 */\
 	INST_ESAC(0x9201, D5, st) /* ST -- Store Indirect Data Space Z -- 1001 001d dddd 00oo */\
 	INST_ESAC(0x9202, D5, st) /* ST -- Store Indirect Data Space Z -- 1001 001d dddd 00oo */\
 	INST_ESAC(0x9209, D5, st) /* ST -- Store Indirect Data Space Y -- 1001 001d dddd 10oo */\
@@ -741,26 +741,26 @@ typedef void (*avr_inst_pfn)(
 	INST_ESAC(0x9406, D5, lsr) /* LSR -- 0x9406 -- Logical Shift Right -- 1001 010d dddd 0110 */\
 	INST_ESAC(0x9407, D5, ror) /* ROR -- 0x9407 -- Rotate Right -- 1001 010d dddd 0111 */\
 	INST_ESAC(0x9408, SREG, sreg_cl_se) /* SET -- 0x9408 -- Set SREG Bit -- 1001 0100 Bbbb 1000 */\
-	INST_ESAC(0x9409, ALL, call_jmp_ei) /* IJMP --0x9409 -- Indirect jump -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9409, ALL, ijmp) /* IJMP --0x9409 -- Indirect jump -- 1001 010c 000e 1001 */\
 	INST_ESAC(0x940a, D5, dec) /* DEC -- 0x940a -- Decrement -- 1001 010d dddd 1010 */\
 	INST_ESAC(0x940c, ABS22, call_jmp_long) /* LJMP -- 0x940c -- Long Call to sub, 32 bits -- 1001 010a aaaa 11ca */\
 	INST_ESAC(0x940e, ABS22, call_jmp_long) /* LCALL -- 0x940e -- Long Call to sub, 32 bits -- 1001 010a aaaa 11ca */\
-	INST_ESAC(0x9419, ALL, call_jmp_ei) /* EIJMP -- 0x9419 -- Indirect jump -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9419, ALL, eijmp) /* EIJMP -- 0x9419 -- Indirect jump -- 1001 010c 000e 1001 */\
 	INST_ESAC(0x9488, SREG, sreg_cl_se) /* CLR -- 0x9408 -- Set SREG Bit -- 1001 0100 Bbbb 1000 */\
 	INST_ESAC(0x9508, ALL, ret) /* RET -- 0x9508 -- Return -- 1001 0101 0000 1000 */\
-	INST_ESAC(0x9509, ALL, call_jmp_ei) /* ICALL -- 0x9509 -- Indirect Call to Subroutine -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9509, ALL, icall) /* ICALL -- 0x9509 -- Indirect Call to Subroutine -- 1001 010c 000e 1001 */\
 	INST_ESAC(0x9518, ALL, reti) /* RETI -- 0x9518 -- Return from Interrupt -- 1001 0101 0001 1000 */\
-	INST_ESAC(0x9519, ALL, call_jmp_ei) /* EICALL -- 0x9519 -- Indirect Call to Subroutine -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9519, ALL, eicall) /* EICALL -- 0x9519 -- Indirect Call to Subroutine -- 1001 010c 000e 1001 */\
 	INST_ESAC(0x9588, ALL, sleep) /* SLEEP -- 0x9588 -- 1001 0101 1000 1000 */\
 	INST_ESAC(0x9598, ALL, break) /* BREAK -- 0x9598 -- 1001 0101 1001 1000 */\
 	INST_ESAC(0x95a8, ALL, wdr) /* WDR -- 0x95a8 -- Watchdog Reset -- 1001 0101 1010 1000 */\
 	INST_ESAC(0x95c8, ALL, lpm) /* LPM -- 0x95c8 -- Load Program Memory R0 <- (Z) -- 1001 0101 1100 1000 */\
 	INST_ESAC(0x95e8, ALL, spm) /* SPM -- 0x95e8 -- Store Program Memory -- 1001 0101 1110 1000 */\
-	INST_ESAC(0x9600, P2K6, adiw_sbiw) /* ADIW -- 0x9600 -- Add Immediate to Word -- 1001 0110 KKpp KKKK */\
-	INST_ESAC(0x9700, P2K6, adiw_sbiw) /* SBIW -- 0x9700 -- Subtract Immediate from Word -- 1001 0111 KKpp KKKK */\
-	INST_ESAC(0x9800, A5B3, cbi_sbi) /* CBI -- 0x9800 -- Clear Bit in I/O Register -- 1001 1000 AAAA Abbb */\
+	INST_ESAC(0x9600, P2K6, adiw) /* ADIW -- 0x9600 -- Add Immediate to Word -- 1001 0110 KKpp KKKK */\
+	INST_ESAC(0x9700, P2K6, sbiw) /* SBIW -- 0x9700 -- Subtract Immediate from Word -- 1001 0111 KKpp KKKK */\
+	INST_ESAC(0x9800, A5B3, cbi) /* CBI -- 0x9800 -- Clear Bit in I/O Register -- 1001 1000 AAAA Abbb */\
 	INST_ESAC(0x9900, A5B3, sbic_sbis) /* SBIC -- 0x9900 -- Skip if Bit in I/O Register is Cleared -- 1001 1001 AAAA Abbb */\
-	INST_ESAC(0x9a00, A5B3, cbi_sbi) /* SBI -- 0x9a00 -- Set Bit in I/O Register -- 1001 1010 AAAA Abbb */\
+	INST_ESAC(0x9a00, A5B3, sbi) /* SBI -- 0x9a00 -- Set Bit in I/O Register -- 1001 1010 AAAA Abbb */\
 	INST_ESAC(0x9b00, A5B3, sbic_sbis) /* SBIS -- 0x9b00 -- Skip if Bit in I/O Register is Set -- 1001 1011 AAAA Abbb */\
 	INST_ESAC(0x9c00, D5R5, mul) /* MUL -- 0x9c00 -- Multiply Unsigned -- 1001 11rd dddd rrrr */\
 	INST_ESAC(0xb800, D5A6, in_out) /* OUT A,Rr -- 0xb800 -- 1011 1AAd dddd AAAA */\
@@ -770,8 +770,8 @@ typedef void (*avr_inst_pfn)(
 	INST_ESAC(0xe000, H4K8, ldi) /* LDI Rd, K aka SER (LDI r, 0xff) -- 0xe000 -- 1110 kkkk dddd kkkk */\
 	INST_ESAC(0xf000, O7S3, brxc_brxs) /* BRXC/BRXS -- 0xf00 -- All the SREG branches -- 1111 0Boo oooo osss */\
 	INST_ESAC(0xf600, O7S3, brxc_brxs) /* BRXC/BRXS -- 0xf60 -- All the SREG branches -- 1111 0Boo oooo osss */\
-	INST_ESAC(0xf800, D5B3, bld_bst) /* BST -- 0xf800 -- Bit Store from T into a Bit in Register -- 1111 10sd dddd 0bbb */\
-	INST_ESAC(0xfa00, D5B3, bld_bst) /* BLD -- 0xfa00 -- Bit Store from T into a Bit in Register -- 1111 10sd dddd 0bbb */\
+	INST_ESAC(0xf800, D5B3, bld) /* BST -- 0xf800 -- Bit Store from T into a Bit in Register -- 1111 10sd dddd 0bbb */\
+	INST_ESAC(0xfa00, D5B3, bst) /* BLD -- 0xfa00 -- Bit Store from T into a Bit in Register -- 1111 10sd dddd 0bbb */\
 	INST_ESAC(0xfc00, D5B3, sbrc_sbrs) /* SBRS/SBRC -- Skip if Bit in Register is Set/Clear -- 1111 11sd dddd 0bbb */\
 	INST_ESAC(0xfe00, D5B3, sbrc_sbrs) /* SBRS/SBRC -- Skip if Bit in Register is Set/Clear -- 1111 11sd dddd 0bbb */\
 	INST_ESAC(0x0000, NONE, invalid_opcode)
@@ -794,8 +794,47 @@ enum {
 	INST_OP_SUB,
 };
 
-#define INST_FLAG_CARRY (1 << 0)
-#define INST_FLAG_SAVE_RESULT (1 << 1)
+#define INST_FLAG_NONE 0
+#define INST_FLAG_CALL (1 << 0)
+#define INST_FLAG_CARRY (1 << 1)
+#define INST_FLAG_CLEAR 0
+#define INST_FLAG_EIND (1 << 2)
+#define INST_FLAG_LOAD (1 << 3)
+#define INST_FLAG_SAVE_RESULT (1 << 4)
+#define INST_FLAG_SET (1 << 5)
+#define INST_FLAG_STORE 0
+
+/*
+ * begin common code handlers
+ *
+ * all handlers in this section should probably be inlined
+ * incomming flags should be constant variables
+ *
+ * depends heavily on dce (dead code elimination)
+ */
+INLINE_INST_DECL(adiw_sbiw, const uint8_t operation)
+{
+	get_vp2_k6(opcode);
+	uint16_t res = vp;
+	int add = INST_OP_ADD == operation;
+	if (add)
+		res += k;
+	else
+		res -= k;
+	STATE("%s %s:%s[%04x], 0x%02x\n", add ? "adiw" : "sbiw", avr_regname(p), avr_regname(p + 1), vp, k);
+	_avr_set_r16le_hl(avr, p, res);
+	if (add) {
+		avr->sreg[S_V] = ((~vp & res) >> 15) & 1;
+		avr->sreg[S_C] = ((~res & vp) >> 15) & 1;
+	} else {
+		avr->sreg[S_V] = ((vp & ~res) >> 15) & 1;
+		avr->sreg[S_C] = ((res & ~vp) >> 15) & 1;
+	}
+	_avr_flags_zns16(avr, res);
+	SREG();
+	(*cycle)++;
+}
+
 
 INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags, uint8_t r0, uint8_t vr0, uint8_t r1, uint8_t vr1)
 {
@@ -912,6 +951,93 @@ INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags
 	}
 }
 
+INLINE_INST_DECL(bld_bst, const uint8_t flags)
+{
+	get_vd5_s3_mask(opcode);
+	
+	if (flags & INST_FLAG_LOAD) {
+		uint8_t v = (vd & ~mask) | (avr->sreg[S_T] ? mask : 0);
+		STATE("bld %s[%02x], 0x%02x = %02x\n", avr_regname(d), vd, mask, v);
+		_avr_set_r(avr, d, v);
+	} else {
+		STATE("bst %s[%02x], 0x%02x\n", avr_regname(d), vd, mask);
+		avr->sreg[S_T] = (vd >> s) & 1;
+	}
+	
+	SREG();
+}
+
+INLINE_INST_DECL(call_jmp_ei, const uint8_t flags)
+{
+	int c = flags & INST_FLAG_CALL;
+	int e = flags & INST_FLAG_EIND;
+	if (e && !avr->eind)
+		_avr_invalid_opcode(avr);
+	uint32_t z = _avr_data_read16le(avr, R_ZL);
+	if (e)
+		z |= avr->data[avr->eind] << 16;
+	STATE("%si%s Z[%04x]\n", e?"e":"", p?"call":"jmp", z << 1);
+	if (c)
+		*cycle += _avr_push_addr(avr, *new_pc) - 1;
+	*new_pc = z << 1;
+	(*cycle)++;
+	TRACE_JUMP();
+}
+
+INLINE_INST_DECL(cbi_sbi, const uint8_t flags)
+{
+	get_io5_b3mask(opcode);
+	uint8_t res = _avr_get_ram(avr, io);
+	int set = flags & INST_FLAG_SET;
+	if(set)
+		res |= mask;
+	else
+		res &= ~mask;
+	STATE("%s %s[%04x], 0x%02x = %02x\n", set ? "sbi" : "cbi", avr_regname(io), avr->data[io], mask, res);
+	_avr_set_ram(avr, io, res);
+	(*cycle)++;
+}
+
+INLINE_INST_DECL(ldd_std, const uint8_t flags)
+{
+	get_d5_q6(opcode);
+	uint8_t  rYZ = (opcode & 0x0008) ? R_YL : R_ZL;
+	uint16_t vYZ = _avr_data_read16le(avr, rYZ);
+	if (flags & INST_FLAG_LOAD) {
+		uint8_t vvr = _avr_get_ram(avr, vYZ + q);
+		STATE("ld %s, (%c+%d[%04x])=[%02x]\n", 
+			avr_regname(d), *avr_regname(rYZ), 
+			q, vYZ + q, vvr);
+		_avr_set_r(avr, d, vvr);
+	} else {
+		uint8_t vd = avr->data[d];
+		STATE("st (%c+%d[%04x]), %s[%02x]\n", 
+			*avr_regname(rYZ), q, vYZ + q, 
+			avr_regname(d), vd);
+		_avr_set_ram(avr, vYZ + q, vd);
+	}
+	(*cycle)++; // 2 cycles, 3 for tinyavr
+}
+
+INLINE_INST_DECL(lds_sts, const uint8_t flags)
+{
+	get_vd5(opcode);
+	uint16_t x = _avr_flash_read16le(avr, *new_pc);
+	*new_pc += 2;
+	
+	if (flags & INST_FLAG_LOAD) {
+		STATE("lds %s[%02x], 0x%04x\n", avr_regname(d), vd, x);
+		_avr_set_r(avr, d, _avr_get_ram(avr, x));
+	} else {
+		STATE("sts 0x%04x, %s[%02x]\n", x, avr_regname(d), vd);
+	}
+
+	(*cycle)++; // 2 cycles
+
+	if (!(flags & INST_FLAG_LOAD))
+		_avr_set_ram(avr, x, vd);
+}
+
 INLINE_INST_DECL(skip_if, uint16_t res)
 {
 	if (res) {
@@ -935,32 +1061,15 @@ INLINE_INST_DECL(h4k8_common_helper, const uint8_t operation, const uint8_t flag
 	INST_SUB_CALL(alu_common_helper, operation, flags, h, vh, -1, k);
 }
 
+/*
+ * end common code, begin specialized instruction handlers
+ *
+ * inlining here may not be as important.
+ */
+
 INLINE_INST_SUB_CALL_DECL(addc, d5r5_common_helper, INST_OP_ADD, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT)
 INLINE_INST_SUB_CALL_DECL(add, d5r5_common_helper, INST_OP_ADD, INST_FLAG_SAVE_RESULT)
-
-INLINE_INST_DECL(adiw_sbiw)
-{
-	get_vp2_k6(opcode);
-	uint16_t res = vp;
-	int add = (opcode & 0x0100) == 0;
-	if (add)
-		res += k;
-	else
-		res -= k;
-	STATE("%s %s:%s[%04x], 0x%02x\n", add ? "adiw" : "sbiw", avr_regname(p), avr_regname(p + 1), vp, k);
-	_avr_set_r16le_hl(avr, p, res);
-	if(add) {
-		avr->sreg[S_V] = ((~vp & res) >> 15) & 1;
-		avr->sreg[S_C] = ((~res & vp) >> 15) & 1;
-	} else {
-		avr->sreg[S_V] = ((vp & ~res) >> 15) & 1;
-		avr->sreg[S_C] = ((res & ~vp) >> 15) & 1;
-	}
-	_avr_flags_zns16(avr, res);
-	SREG();
-	(*cycle)++;
-}
-
+INLINE_INST_SUB_CALL_DECL(adiw, adiw_sbiw, INST_OP_ADD)
 INLINE_INST_SUB_CALL_DECL(and, d5r5_common_helper, INST_OP_AND, INST_FLAG_SAVE_RESULT)
 INST_SUB_CALL_DECL(andi, h4k8_common_helper, INST_OP_AND, INST_FLAG_SAVE_RESULT)
 
@@ -974,22 +1083,8 @@ INST_DECL(asr)
 	SREG();
 }
 
-INLINE_INST_DECL(bld_bst)
-{
-	get_vd5_s3_mask(opcode);
-	int store = opcode & 0x0200;
-	
-	if (!store) {
-		uint8_t v = (vd & ~mask) | (avr->sreg[S_T] ? mask : 0);
-		STATE("bld %s[%02x], 0x%02x = %02x\n", avr_regname(d), vd, mask, v);
-		_avr_set_r(avr, d, v);
-	} else {
-		STATE("bst %s[%02x], 0x%02x\n", avr_regname(d), vd, 1 << s);
-		avr->sreg[S_T] = (vd >> s) & 1;
-	}
-	
-	SREG();
-}
+INST_SUB_CALL_DECL(bld, bld_bst, INST_FLAG_LOAD)
+INST_SUB_CALL_DECL(bst, bld_bst, INST_FLAG_NONE)
 
 INST_DECL(break)
 {
@@ -1025,29 +1120,17 @@ INLINE_INST_DECL(brxc_brxs)
 	}
 }
 
-INLINE_INST_DECL(call_jmp_ei)
-{
-	int e = opcode & 0x10;
-	int p = opcode & 0x100;
-	if (e && !avr->eind)
-		_avr_invalid_opcode(avr);
-	uint32_t z = _avr_data_read16le(avr, R_ZL);
-	if (e)
-		z |= avr->data[avr->eind] << 16;
-	STATE("%si%s Z[%04x]\n", e?"e":"", p?"call":"jmp", z << 1);
-	if (p)
-		*cycle += _avr_push_addr(avr, *new_pc) - 1;
-	*new_pc = z << 1;
-	(*cycle)++;
-	TRACE_JUMP();
-}
+INST_SUB_CALL_DECL(eicall, call_jmp_ei, INST_FLAG_CALL | INST_FLAG_EIND)
+INST_SUB_CALL_DECL(eijmp, call_jmp_ei, INST_FLAG_EIND)
+INST_SUB_CALL_DECL(icall, call_jmp_ei, INST_FLAG_CALL)
+INST_SUB_CALL_DECL(ijmp, call_jmp_ei, INST_FLAG_NONE)
 
 INLINE_INST_DECL(call_jmp_long)
 {
 	int push = opcode & 2;
 
 	avr_flashaddr_t a = ((opcode & 0x01f0) >> 3) | (opcode & 1);
-	uint16_t x = _avr_flash_read16le(avr, *new_pc);
+	uint32_t x = _avr_flash_read16le(avr, *new_pc);
 	a = (a << 16) | x;
 	STATE("%s 0x%06x\n", push ? "call" : "jmp", a);
 	if (push)
@@ -1059,19 +1142,7 @@ INLINE_INST_DECL(call_jmp_long)
 	STACK_FRAME_PUSH();
 }
 
-INLINE_INST_DECL(cbi_sbi)
-{
-	get_io5_b3mask(opcode);
-	uint8_t res = _avr_get_ram(avr, io);
-	int set = opcode & 0x0200;
-	if(set)
-		res |= mask;
-	else
-		res &= ~mask;
-	STATE("%s %s[%04x], 0x%02x = %02x\n", set ? "sbi" : "cbi", avr_regname(io), avr->data[io], mask, res);
-	_avr_set_ram(avr, io, res);
-	(*cycle)++;
-}
+INST_SUB_CALL_DECL(cbi, cbi_sbi, INST_FLAG_CLEAR)
 
 INST_DECL(com)
 {
@@ -1160,49 +1231,9 @@ INLINE_INST_DECL(ldi)
 	_avr_set_r(avr, h, k);
 }
 
-INLINE_INST_DECL(ldd_std)
-{
-	uint8_t  rYZ = (opcode & 0x0008) ? R_YL : R_ZL;
-	uint16_t vYZ = _avr_data_read16le(avr, rYZ);
-	get_d5_q6(opcode);
-	if (opcode & 0x0200) {
-		uint8_t vd = avr->data[d];
-		STATE("st (%c+%d[%04x]), %s[%02x]\n", 
-			*avr_regname(rYZ), q, vYZ+q, 
-			avr_regname(d), vd);
-		_avr_set_ram(avr, vYZ+q, vd);
-	} else {
-		uint8_t vvr = _avr_get_ram(avr, vYZ+q);
-		STATE("ld %s, (%c+%d[%04x])=[%02x]\n", 
-			avr_regname(d), *avr_regname(rYZ), 
-			q, vYZ+q, vvr);
-		_avr_set_r(avr, d, vvr);
-	}
-	(*cycle)++; // 2 cycles, 3 for tinyavr
-}
+INST_SUB_CALL_DECL(ldd, ldd_std, INST_FLAG_LOAD)
 
-INLINE_INST_DECL(lds_sts)
-{
-	get_vd5(opcode);
-	uint16_t x = _avr_flash_read16le(avr, *new_pc);
-	*new_pc += 2;
-	
-	int sts = opcode & 0x0200;
-	
-	if (sts) {
-		STATE("sts 0x%04x, %s[%02x]\n", x, avr_regname(d), vd);
-	} else {
-		STATE("lds %s[%02x], 0x%04x\n", avr_regname(d), vd, x);
-	}
-
-	if (!sts)
-		_avr_set_r(avr, d, _avr_get_ram(avr, x));
-
-	(*cycle)++; // 2 cycles
-
-	if (sts)
-		_avr_set_ram(avr, x, vd);
-}
+INST_SUB_CALL_DECL(lds, lds_sts, INST_FLAG_LOAD)
 
 INLINE_INST_DECL(lpm)
 {
@@ -1429,6 +1460,10 @@ INST_DECL(ror)
 INST_SUB_CALL_DECL(sbc, d5r5_common_helper, INST_OP_SUB, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT)
 INST_SUB_CALL_DECL(sbci, h4k8_common_helper, INST_OP_SUB, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT)
 
+INST_SUB_CALL_DECL(sbi, cbi_sbi, INST_FLAG_SET)
+
+INLINE_INST_SUB_CALL_DECL(sbiw, adiw_sbiw, INST_OP_SUB)
+
 INLINE_INST_DECL(skip_io_r_logic, uint8_t rio, uint8_t vrio, uint8_t mask, char *opname_array[2])
 {
 	int set = (opcode & 0x0200) != 0;
@@ -1451,6 +1486,10 @@ INLINE_INST_DECL(sbrc_sbrs)
 	char *opname_array[2] = { "sbrc", "sbrs" };
 	INST_SUB_CALL(skip_io_r_logic, d, vd, mask, opname_array);
 }
+
+INST_SUB_CALL_DECL(std, ldd_std, INST_FLAG_STORE)
+
+INST_SUB_CALL_DECL(sts, lds_sts, INST_FLAG_STORE)
 
 INST_SUB_CALL_DECL(sub, d5r5_common_helper, INST_OP_SUB, INST_FLAG_SAVE_RESULT)
 INST_SUB_CALL_DECL(subi, h4k8_common_helper, INST_OP_SUB, INST_FLAG_SAVE_RESULT)
