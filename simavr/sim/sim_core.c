@@ -891,7 +891,7 @@ INLINE_INST_DECL(call_jmp_long)
 	avr_flashaddr_t a = ((opcode & 0x01f0) >> 3) | (opcode & 1);
 	uint16_t x = _avr_flash_read16le(avr, *new_pc);
 	a = (a << 16) | x;
-	STATE("call 0x%06x\n", push ? "call" : "jmp", a);
+	STATE("%s 0x%06x\n", push ? "call" : "jmp", a);
 	if (push)
 		*cycle += 1 + _avr_push_addr(avr, *new_pc + 2);
 	else
