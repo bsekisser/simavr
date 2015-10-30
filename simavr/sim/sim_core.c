@@ -101,10 +101,27 @@ void crash(avr_t* avr)
 	avr_sadly_crashed(avr, 0);
 }
 #else
-#define T(w)
-#define REG_TOUCH(a, r)
-#define STATE(_f, args...)
-#define SREG()
+	#if 1
+		#define T(w)
+		#define REG_TOUCH(a, r)
+		#define STATE(_f, args...)
+		#define SREG()
+	#else
+		#define T(w) w
+		#define REG_TOUCH(a, r)
+		#define STATE(_f, args...) \
+			do { \
+				printf("%04x: " _f, avr->pc, ## args); \
+			} while (0);
+	
+		#define SREG() \
+			do { \
+				printf("%04x: \t\t\t\t\t\t\t\t\tSREG = ", avr->pc); \
+				for (int _sbi = 0; _sbi < 8; _sbi++)\
+					printf("%c", avr->sreg[_sbi] ? toupper(_sreg_bit_name[_sbi]) : '.');\
+				printf("\n");\
+			} while (0);
+	#endif
 
 void crash(avr_t* avr)
 {
