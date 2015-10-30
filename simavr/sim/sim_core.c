@@ -1019,7 +1019,8 @@ INLINE_INST_DECL(ld, uint8_t r)
 	if (op == 2) x--;
 	uint8_t vd = _avr_get_ram(avr, x);
 	if (op == 1) x++;
-	_avr_set_r16le_hl(avr, r, x);
+	if (op)
+		_avr_set_r16le_hl(avr, r, x);
 	_avr_set_r(avr, d, vd);
 }
 
@@ -1365,7 +1366,8 @@ INLINE_INST_DECL(st, uint8_t r)
 	if (op == 2) x--;
 	_avr_set_ram(avr, x, vd);
 	if (op == 1) x++;
-	_avr_set_r16le_hl(avr, r, x);
+	if (op)
+		_avr_set_r16le_hl(avr, r, x);
 }
 
 INST_DECL(swap)
