@@ -668,13 +668,21 @@ typedef void (*avr_inst_pfn)(
 		INST_SUB_CALL(_subcall_opname, ## _args); \
 	}
 
+#define INST_OPCODE(_opname) \
+	_avr_inst_opcode_ ## _opname
+
+#define INST_AS_OPCODE_SUB_CALL_DECL(_opname, _subcall_opname, _args...) \
+	INST_SUB_CALL_DECL(_opname, _subcall_opname, INST_OPCODE(_opname), ## _args)
+
 #define INST_MASK_ABS22		0xfe0e
 #define INST_MASK_ALL		0xffff
 #define INST_MASK_A5B3		0xff00
+#define INST_MASK_D3R3		0xff88
 #define INST_MASK_D4R4		0xff00
 #define INST_MASK_D5		0xfe0f
 #define INST_MASK_D5A6		0xf800
 #define INST_MASK_D5B3		0xfe08
+#define INST_MASK_D5rXYZ	0xfe03
 #define INST_MASK_D5rYZ		0xd200
 #define INST_MASK_D5R5		0xfc00
 #define INST_MASK_H4K8		0xf000
@@ -687,7 +695,10 @@ typedef void (*avr_inst_pfn)(
 	INST_ESAC(0x0000, ALL, nop) /* NOP */\
 	INST_ESAC(0x0100, D4R4, movw) /* MOVW -- 0x0100 -- Copy Register Word -- 0000 0001 dddd rrrr */\
 	INST_ESAC(0x0200, D4R4, muls) /* MULS -- 0x0200 -- Multiply Signed -- 0000 0010 dddd rrrr */\
-	INST_ESAC(0x0300, D4R4, mul_complex) /* MUL -- 0x0300 -- Multiply -- 0000 0011 fddd frrr */\
+	INST_ESAC(0x0300, D3R3, mulsu) /* MULSU -- 0x0300 -- Multiply Signed Unsigned -- 0000 0011 0ddd 0rrr */\
+	INST_ESAC(0x0308, D3R3, fmul) /* FMUL -- 0x0308 -- Fractional Multiply Unsigned -- 0000 0011 0ddd 1rrr */\
+	INST_ESAC(0x0380, D3R3, fmuls) /* FMULS -- 0x0380 -- Multiply Signed -- 0000 0011 1ddd 0rrr */\
+	INST_ESAC(0x0388, D3R3, fmulsu) /* FMULSU -- 0x0388 -- Multiply Signed Unsigned -- 0000 0011 1ddd 1rrr */\
 	INST_ESAC(0x0400, D5R5, cpc) /* CPC -- 0x0400 -- Compare with carry -- 0000 01rd dddd rrrr */\
 	INST_ESAC(0x0800, D5R5, sbc) /* SBC -- 0x0800 -- Subtract with carry -- 0000 10rd dddd rrrr */\
 	INST_ESAC(0x0c00, D5R5, add) /* ADD -- 0x0c00 -- Add without carry -- 0000 11rd dddd rrrr */\
@@ -704,29 +715,21 @@ typedef void (*avr_inst_pfn)(
 	INST_ESAC(0x5000, H4K8, subi) /* SUBI -- 0x5000 -- Subtract Immediate -- 0101 kkkk hhhh kkkk */\
 	INST_ESAC(0x6000, H4K8, ori) /* ORI aka SBR -- 0x6000 -- Logical OR with Immediate -- 0110 kkkk hhhh kkkk */\
 	INST_ESAC(0x7000, H4K8, andi) /* ANDI	-- 0x7000 -- Logical AND with Immediate -- 0111 kkkk hhhh kkkk */\
-	INST_ESAC(0x8000, D5rYZ, ldd_std) /* LD (LDD) -- Load Indirect -- 10q0 qqsd dddd yqqq */\
-	INST_ESAC(0x8200, D5rYZ, ldd_std) /* ST (STD) -- Store Indirect -- 10q0 qqsd dddd yqqq */\
-	INST_ESAC(0x9000, D5, lds_sts) /* LDS -- 0x9000 -- Load Direct from Data Space, 32 bits -- 1001 0000 0000 0000 */\
-	INST_ESAC(0x9001, D5, ld) /* LD -- 0x9001 -- Load Indirect from Data using Z -- 1001 00sd dddd 00oo */\
-	INST_ESAC(0x9002, D5, ld) /* LD -- 0x9002 -- Load Indirect from Data using Z -- 1001 00sd dddd 00oo */\
-	INST_ESAC(0x9004, D5, lpm) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
-	INST_ESAC(0x9005, D5, lpm) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
-	INST_ESAC(0x9006, D5, lpm) /* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
-	INST_ESAC(0x9007, D5, lpm) /* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
-	INST_ESAC(0x9009, D5, ld) /* LD -- Load Indirect from Data using Y -- 1001 000d dddd 10oo */\
-	INST_ESAC(0x900a, D5, ld) /* LD -- Load Indirect from Data using Y -- 1001 000d dddd 10oo */\
-	INST_ESAC(0x900c, D5, ld) /* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
-	INST_ESAC(0x900d, D5, ld) /* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
-	INST_ESAC(0x900e, D5, ld) /* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
+	INST_ESAC(0x8000, D5rYZ, ldd) /* LD (LDD) -- Load Indirect -- 10q0 qqsd dddd yqqq */\
+	INST_ESAC(0x8200, D5rYZ, std) /* ST (STD) -- Store Indirect -- 10q0 qqsd dddd yqqq */\
+	INST_ESAC(0x9000, D5, lds) /* LDS -- 0x9000 -- Load Direct from Data Space, 32 bits -- 1001 0000 0000 0000 */\
+	INST_ESAC(0x9004, D5, lpm_z) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
+	INST_ESAC(0x9005, D5, lpm_z_post_inc) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
+	INST_ESAC(0x9001, D5rXYZ, ld_post_inc) /* LD -- 0x9001 -- Load Indirect from Data using XYZ++ -- 1001 00sd dddd iioo */\
+	INST_ESAC(0x9002, D5rXYZ, ld_pre_dec) /* LD -- 0x9002 -- Load Indirect from Data using --XYZ -- 1001 00sd dddd iioo */\
+	INST_ESAC(0x9006, D5, elpm_z) /* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
+	INST_ESAC(0x9007, D5, elpm_z_post_inc) /* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
+	INST_ESAC(0x900c, D5, ld_no_op) /* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
 	INST_ESAC(0x900f, D5, pop) /* POP -- 0x900f -- 1001 000d dddd 1111 */\
-	INST_ESAC(0x9200, D5, lds_sts) /* STS -- Store Direct to Data Space, 32 bits -- 1001 0010 0000 0000 */\
-	INST_ESAC(0x9201, D5, st) /* ST -- Store Indirect Data Space Z -- 1001 001d dddd 00oo */\
-	INST_ESAC(0x9202, D5, st) /* ST -- Store Indirect Data Space Z -- 1001 001d dddd 00oo */\
-	INST_ESAC(0x9209, D5, st) /* ST -- Store Indirect Data Space Y -- 1001 001d dddd 10oo */\
-	INST_ESAC(0x920a, D5, st) /* ST -- Store Indirect Data Space Y -- 1001 001d dddd 10oo */\
-	INST_ESAC(0x920c, D5, st) /* ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo */\
-	INST_ESAC(0x920d, D5, st) /* ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo */\
-	INST_ESAC(0x920e, D5, st) /* ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo */\
+	INST_ESAC(0x9200, D5, sts) /* STS -- Store Direct to Data Space, 32 bits -- 1001 0010 0000 0000 */\
+	INST_ESAC(0x9201, D5rXYZ, st_post_inc) /* ST -- Store Indirect Data Space XYZ++ -- 1001 001d dddd iioo */\
+	INST_ESAC(0x9202, D5rXYZ, st_pre_dec) /* ST -- Store Indirect Data Space --XYZ -- 1001 001d dddd iioo */\
+	INST_ESAC(0x920c, D5, st_no_op) /* ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo */\
 	INST_ESAC(0x920f, D5, push) /* PUSH -- 0x920f -- 1001 001d dddd 1111 */\
 	INST_ESAC(0x9400, D5, com) /* COM -- 0x9400 -- One’s Complement -- 1001 010d dddd 0000 */\
 	INST_ESAC(0x9401, D5, neg) /* NEG -- 0x9401 -- Two’s Complement -- 1001 010d dddd 0001 */\
@@ -735,47 +738,55 @@ typedef void (*avr_inst_pfn)(
 	INST_ESAC(0x9405, D5, asr) /* ASR -- 0x9405 -- Arithmetic Shift Right -- 1001 010d dddd 0101 */\
 	INST_ESAC(0x9406, D5, lsr) /* LSR -- 0x9406 -- Logical Shift Right -- 1001 010d dddd 0110 */\
 	INST_ESAC(0x9407, D5, ror) /* ROR -- 0x9407 -- Rotate Right -- 1001 010d dddd 0111 */\
-	INST_ESAC(0x9408, SREG, sreg_cl_se) /* SET -- 0x9408 -- Set SREG Bit -- 1001 0100 Bbbb 1000 */\
-	INST_ESAC(0x9409, ALL, call_jmp_ei) /* IJMP --0x9409 -- Indirect jump -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9408, SREG, set_sreg) /* SET -- 0x9408 -- Set SREG Bit -- 1001 0100 Bbbb 1000 */\
+	INST_ESAC(0x9409, ALL, ijmp) /* IJMP --0x9409 -- Indirect jump -- 1001 010c 000e 1001 */\
 	INST_ESAC(0x940a, D5, dec) /* DEC -- 0x940a -- Decrement -- 1001 010d dddd 1010 */\
-	INST_ESAC(0x940c, ABS22, call_jmp_long) /* LJMP -- 0x940c -- Long Call to sub, 32 bits -- 1001 010a aaaa 11ca */\
-	INST_ESAC(0x940e, ABS22, call_jmp_long) /* LCALL -- 0x940e -- Long Call to sub, 32 bits -- 1001 010a aaaa 11ca */\
-	INST_ESAC(0x9419, ALL, call_jmp_ei) /* EIJMP -- 0x9419 -- Indirect jump -- 1001 010c 000e 1001 */\
-	INST_ESAC(0x9488, SREG, sreg_cl_se) /* CLR -- 0x9408 -- Set SREG Bit -- 1001 0100 Bbbb 1000 */\
+	INST_ESAC(0x940c, ABS22, ljmp) /* LJMP -- 0x940c -- Long Call to sub, 32 bits -- 1001 010a aaaa 11ca */\
+	INST_ESAC(0x940e, ABS22, lcall) /* LCALL -- 0x940e -- Long Call to sub, 32 bits -- 1001 010a aaaa 11ca */\
+	INST_ESAC(0x9419, ALL, eijmp) /* EIJMP -- 0x9419 -- Indirect jump -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9488, SREG, clr_sreg) /* CLR -- 0x9408 -- Set SREG Bit -- 1001 0100 Bbbb 1000 */\
 	INST_ESAC(0x9508, ALL, ret) /* RET -- 0x9508 -- Return -- 1001 0101 0000 1000 */\
-	INST_ESAC(0x9509, ALL, call_jmp_ei) /* ICALL -- 0x9509 -- Indirect Call to Subroutine -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9509, ALL, icall) /* ICALL -- 0x9509 -- Indirect Call to Subroutine -- 1001 010c 000e 1001 */\
 	INST_ESAC(0x9518, ALL, reti) /* RETI -- 0x9518 -- Return from Interrupt -- 1001 0101 0001 1000 */\
-	INST_ESAC(0x9519, ALL, call_jmp_ei) /* EICALL -- 0x9519 -- Indirect Call to Subroutine -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9519, ALL, eicall) /* EICALL -- 0x9519 -- Indirect Call to Subroutine -- 1001 010c 000e 1001 */\
 	INST_ESAC(0x9588, ALL, sleep) /* SLEEP -- 0x9588 -- 1001 0101 1000 1000 */\
 	INST_ESAC(0x9598, ALL, break) /* BREAK -- 0x9598 -- 1001 0101 1001 1000 */\
 	INST_ESAC(0x95a8, ALL, wdr) /* WDR -- 0x95a8 -- Watchdog Reset -- 1001 0101 1010 1000 */\
-	INST_ESAC(0x95c8, ALL, lpm) /* LPM -- 0x95c8 -- Load Program Memory R0 <- (Z) -- 1001 0101 1100 1000 */\
+	INST_ESAC(0x95c8, ALL, lpm_r0_z) /* LPM -- 0x95c8 -- Load Program Memory R0 <- (Z) -- 1001 0101 1100 1000 */\
 	INST_ESAC(0x95e8, ALL, spm) /* SPM -- 0x95e8 -- Store Program Memory -- 1001 0101 1110 1000 */\
-	INST_ESAC(0x9600, P2K6, adiw_sbiw) /* ADIW -- 0x9600 -- Add Immediate to Word -- 1001 0110 KKpp KKKK */\
-	INST_ESAC(0x9700, P2K6, adiw_sbiw) /* SBIW -- 0x9700 -- Subtract Immediate from Word -- 1001 0111 KKpp KKKK */\
-	INST_ESAC(0x9800, A5B3, cbi_sbi) /* CBI -- 0x9800 -- Clear Bit in I/O Register -- 1001 1000 AAAA Abbb */\
-	INST_ESAC(0x9900, A5B3, sbic_sbis) /* SBIC -- 0x9900 -- Skip if Bit in I/O Register is Cleared -- 1001 1001 AAAA Abbb */\
-	INST_ESAC(0x9a00, A5B3, cbi_sbi) /* SBI -- 0x9a00 -- Set Bit in I/O Register -- 1001 1010 AAAA Abbb */\
-	INST_ESAC(0x9b00, A5B3, sbic_sbis) /* SBIS -- 0x9b00 -- Skip if Bit in I/O Register is Set -- 1001 1011 AAAA Abbb */\
+	INST_ESAC(0x9600, P2K6, adiw) /* ADIW -- 0x9600 -- Add Immediate to Word -- 1001 0110 KKpp KKKK */\
+	INST_ESAC(0x9700, P2K6, sbiw) /* SBIW -- 0x9700 -- Subtract Immediate from Word -- 1001 0111 KKpp KKKK */\
+	INST_ESAC(0x9800, A5B3, cbi) /* CBI -- 0x9800 -- Clear Bit in I/O Register -- 1001 1000 AAAA Abbb */\
+	INST_ESAC(0x9900, A5B3, sbic) /* SBIC -- 0x9900 -- Skip if Bit in I/O Register is Cleared -- 1001 1001 AAAA Abbb */\
+	INST_ESAC(0x9a00, A5B3, sbi) /* SBI -- 0x9a00 -- Set Bit in I/O Register -- 1001 1010 AAAA Abbb */\
+	INST_ESAC(0x9b00, A5B3, sbis) /* SBIS -- 0x9b00 -- Skip if Bit in I/O Register is Set -- 1001 1011 AAAA Abbb */\
 	INST_ESAC(0x9c00, D5R5, mul) /* MUL -- 0x9c00 -- Multiply Unsigned -- 1001 11rd dddd rrrr */\
-	INST_ESAC(0xb800, D5A6, in_out) /* OUT A,Rr -- 0xb800 -- 1011 1AAd dddd AAAA */\
-	INST_ESAC(0xb000, D5A6, in_out) /* IN Rd,A -- 0xb000 -- 1011 0AAd dddd AAAA */\
-	INST_ESAC(0xc000, O12, r_call_jmp) /* RJMP -- 0xc000 -- 1100 kkkk kkkk kkkk */\
-	INST_ESAC(0xd000, O12, r_call_jmp) /* RCALL -- 0xd000 -- 1101 kkkk kkkk kkkk */\
+	INST_ESAC(0xb000, D5A6, in) /* IN Rd,A -- 0xb000 -- 1011 0AAd dddd AAAA */\
+	INST_ESAC(0xb800, D5A6, out) /* OUT A,Rr -- 0xb800 -- 1011 1AAd dddd AAAA */\
+	INST_ESAC(0xc000, O12, rjmp) /* RJMP -- 0xc000 -- 1100 kkkk kkkk kkkk */\
+	INST_ESAC(0xd000, O12, rcall) /* RCALL -- 0xd000 -- 1101 kkkk kkkk kkkk */\
 	INST_ESAC(0xe000, H4K8, ldi) /* LDI Rd, K aka SER (LDI r, 0xff) -- 0xe000 -- 1110 kkkk dddd kkkk */\
-	INST_ESAC(0xf000, O7S3, brxc_brxs) /* BRXC/BRXS -- 0xf000 -- All the SREG branches -- 1111 0Boo oooo osss */\
-	INST_ESAC(0xf400, O7S3, brxc_brxs) /* BRXC/BRXS -- 0xf400 -- All the SREG branches -- 1111 0Boo oooo osss */\
-	INST_ESAC(0xf800, D5B3, bld_bst) /* BST -- 0xf800 -- Bit Store from T into a Bit in Register -- 1111 10sd dddd 0bbb */\
-	INST_ESAC(0xfa00, D5B3, bld_bst) /* BLD -- 0xfa00 -- Bit Store from T into a Bit in Register -- 1111 10sd dddd 0bbb */\
-	INST_ESAC(0xfc00, D5B3, sbrc_sbrs) /* SBRS/SBRC -- Skip if Bit in Register is Set/Clear -- 1111 11sd dddd 0bbb */\
-	INST_ESAC(0xfe00, D5B3, sbrc_sbrs) /* SBRS/SBRC -- Skip if Bit in Register is Set/Clear -- 1111 11sd dddd 0bbb */\
-	
+	INST_ESAC(0xf000, O7S3, brxs) /* BRXS -- 0xf000 -- Branch if bit in SREG is set -- 1111 0Boo oooo osss */\
+	INST_ESAC(0xf400, O7S3, brxc) /* BRXC -- 0xf400 -- Branch if bit in SREG is clear -- 1111 0Boo oooo osss */\
+	INST_ESAC(0xf800, D5B3, bld) /* BST -- 0xf800 -- Bit Store from T into a Bit in Register -- 1111 10sd dddd 0bbb */\
+	INST_ESAC(0xfa00, D5B3, bst) /* BLD -- 0xfa00 -- Bit Store from Bit in Register to T -- 1111 10sd dddd 0bbb */\
+	INST_ESAC(0xfc00, D5B3, sbrc) /* SBRC -- 0xfc00 -- Skip if Bit in Register is Clear -- 1111 11sd dddd 0bbb */\
+	INST_ESAC(0xfe00, D5B3, sbrs) /* SBRS -- 0xfe00 -- Skip if Bit in Register is Set -- 1111 11sd dddd 0bbb */\
+
 #undef INST_ESAC
 #define INST_ESAC(_opcode, _opmask, _opname, _args...) \
 	_avr_inst_ ## _opcode ## _ ##  _opname,
 
-enum {
-	INST_ESAC_NONE = 0, // never start actual instruction case with zero...  see table below.
+enum { // this table provides instruction case indices
+	INST_ESAC_NONE = 0, // starting with zero...  bad...  special case.
+	INST_ESAC_TABLE
+};
+
+#undef INST_ESAC
+#define INST_ESAC(_opcode, _opmask, _opname, _args...) \
+	INST_OPCODE(_opname) = _opcode,
+
+enum { // this table provides opcode cross references
 	INST_ESAC_TABLE
 };
 
@@ -788,13 +799,55 @@ enum {
 	INST_OP_SUB,
 };
 
-#define INST_FLAG_CARRY (1 << 0)
-#define INST_FLAG_SAVE_RESULT (1 << 1)
+enum {
+	INST_FLAG_BIT_NONE = 0,
+	INST_FLAG_BIT_CARRY,
+	INST_FLAG_BIT_SAVE_RESULT,
+};
+	
+#define INST_FLAG_NONE 0
+#define INST_FLAG_CARRY (1 << INST_FLAG_BIT_CARRY)
+#define INST_FLAG_SAVE_RESULT (1 << INST_FLAG_BIT_SAVE_RESULT)
+
+/*
+ * begin common code handlers
+ *
+ * all handlers in this section should probably be inlined
+ * incomming flags should be constant variables
+ *
+ * depends heavily on dce (dead code elimination)
+ */
+INLINE_INST_DECL(adiw_sbiw, const uint16_t as_opcode)
+{
+	const int add = (as_opcode & 0x0100) == 0;
+
+	get_vp2_k6(opcode);
+	uint16_t res = vp;
+	if (add)
+		res += k;
+	else
+		res -= k;
+	STATE("%s %s:%s[%04x], 0x%02x\n", add ? "adiw" : "sbiw", avr_regname(p), avr_regname(p + 1), vp, k);
+	_avr_set_r16le_hl(avr, p, res);
+	if (add) {
+		avr->sreg[S_V] = ((~vp & res) >> 15) & 1;
+		avr->sreg[S_C] = ((~res & vp) >> 15) & 1;
+	} else {
+		avr->sreg[S_V] = ((vp & ~res) >> 15) & 1;
+		avr->sreg[S_C] = ((res & ~vp) >> 15) & 1;
+	}
+	_avr_flags_zns16(avr, res);
+	SREG();
+	(*cycle)++;
+}
+
 
 INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags, uint8_t r0, uint8_t vr0, uint8_t r1, uint8_t vr1)
 {
+	const int carry = 0 != (flags & INST_FLAG_CARRY);
+	const int save_result = 0 != (flags & INST_FLAG_SAVE_RESULT);
+
 	uint8_t res = vr0;
-	int carry = 0 != (flags & INST_FLAG_CARRY);
 	
 	switch (operation) {
 		case	INST_OP_ADD:
@@ -817,8 +870,6 @@ INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags
 			res -= vr1 + (carry ? avr->sreg[S_C] : 0);
 			break;
 	}
-
-	int save_result = 0 != (flags & INST_FLAG_SAVE_RESULT);
 
 	int trace = 0;
 	T(trace = 1;)
@@ -904,103 +955,30 @@ INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags
 	}
 }
 
-INLINE_INST_DECL(skip_if, uint16_t res)
+INLINE_INST_DECL(bld_bst, const uint16_t as_opcode)
 {
-	if (res) {
-		if (_avr_is_instruction_32_bits(avr, *new_pc)) {
-			*new_pc += 4; *cycle += 2;
-		} else {
-			*new_pc += 2; (*cycle)++;
-		}
-	}
-}
+	const int load = (as_opcode & 0x0200) == 0;
 
-INLINE_INST_DECL(d5r5_common_helper, const uint8_t operation, const uint8_t flags)
-{
-	get_vd5_vr5(opcode);
-	INST_SUB_CALL(alu_common_helper, operation, flags, d, vd, r, vr);
-}
-
-INLINE_INST_DECL(h4k8_common_helper, const uint8_t operation, const uint8_t flags)
-{
-	get_vh4_k8(opcode);
-	INST_SUB_CALL(alu_common_helper, operation, flags, h, vh, -1, k);
-}
-
-INST_SUB_CALL_DECL(add, d5r5_common_helper, INST_OP_ADD, INST_FLAG_SAVE_RESULT)
-INST_SUB_CALL_DECL(addc, d5r5_common_helper, INST_OP_ADD, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT)
-
-INLINE_INST_DECL(adiw_sbiw)
-{
-	get_vp2_k6(opcode);
-	uint16_t res = vp;
-	int add = (opcode & 0x0100) == 0;
-	if (add)
-		res += k;
-	else
-		res -= k;
-	STATE("%s %s:%s[%04x], 0x%02x\n", add ? "adiw" : "sbiw", avr_regname(p), avr_regname(p + 1), vp, k);
-	_avr_set_r16le_hl(avr, p, res);
-	if(add) {
-		avr->sreg[S_V] = ((~vp & res) >> 15) & 1;
-		avr->sreg[S_C] = ((~res & vp) >> 15) & 1;
-	} else {
-		avr->sreg[S_V] = ((vp & ~res) >> 15) & 1;
-		avr->sreg[S_C] = ((res & ~vp) >> 15) & 1;
-	}
-	_avr_flags_zns16(avr, res);
-	SREG();
-	(*cycle)++;
-}
-
-INST_SUB_CALL_DECL(and, d5r5_common_helper, INST_OP_AND, INST_FLAG_SAVE_RESULT)
-INST_SUB_CALL_DECL(andi, h4k8_common_helper, INST_OP_AND, INST_FLAG_SAVE_RESULT)
-
-INST_DECL(asr)
-{
-	get_vd5(opcode);
-	uint8_t res = ((int8_t)vd) >> 1; /* (vd >> 1) | (vd & 0x80); */
-	STATE("asr %s[%02x]\n", avr_regname(d), vd);
-	_avr_set_r(avr, d, res);
-	_avr_flags_zcnvs(avr, res, vd);
-	SREG();
-}
-
-INLINE_INST_DECL(bld_bst)
-{
 	get_vd5_s3_mask(opcode);
-	int store = opcode & 0x0200;
-	
-	if (!store) {
+
+	if (load) {
 		uint8_t v = (vd & ~mask) | (avr->sreg[S_T] ? mask : 0);
 		STATE("bld %s[%02x], 0x%02x = %02x\n", avr_regname(d), vd, mask, v);
 		_avr_set_r(avr, d, v);
 	} else {
-		STATE("bst %s[%02x], 0x%02x\n", avr_regname(d), vd, 1 << s);
+		STATE("bst %s[%02x], 0x%02x\n", avr_regname(d), vd, mask);
 		avr->sreg[S_T] = (vd >> s) & 1;
 	}
 	
 	SREG();
 }
 
-INST_DECL(break)
+INLINE_INST_DECL(brxc_brxs, const uint16_t as_opcode)
 {
-	STATE("break\n");
-	if (avr->gdb) {
-		// if gdb is on, we break here as in here
-		// and we do so until gdb restores the instruction
-		// that was here before
-		avr->state = cpu_StepDone;
-		*new_pc = avr->pc;
-		*cycle = 0;
-	}
-}
+	const int set = (as_opcode & 0x0400) == 0;		// this bit means BRXC otherwise BRXS
 
-INLINE_INST_DECL(brxc_brxs)
-{
 	int16_t o = ((int16_t)(opcode << 6)) >> 9; // offset
 	uint8_t s = opcode & 7;
-	int set = (opcode & 0x0400) == 0;		// this bit means BRXC otherwise BRXS
 	int branch = (avr->sreg[s] && set) || (!avr->sreg[s] && !set);
 	const char *names[2][8] = {
 			{ "brcc", "brne", "brpl", "brvc", NULL, "brhc", "brtc", "brid"},
@@ -1017,32 +995,33 @@ INLINE_INST_DECL(brxc_brxs)
 	}
 }
 
-INLINE_INST_DECL(call_jmp_ei)
+INLINE_INST_DECL(call_jmp_ei, const uint16_t as_opcode)
 {
-	int e = opcode & 0x10;
-	int p = opcode & 0x100;
+	const int e = as_opcode & 0x10;
+	const int c = as_opcode & 0x100;
+
 	if (e && !avr->eind)
 		_avr_invalid_opcode(avr);
 	uint32_t z = _avr_data_read16le(avr, R_ZL);
 	if (e)
 		z |= avr->data[avr->eind] << 16;
-	STATE("%si%s Z[%04x]\n", e?"e":"", p?"call":"jmp", z << 1);
-	if (p)
+	STATE("%si%s Z[%04x]\n", e ? "e" : "", c ? "call" : "jmp", z << 1);
+	if (c)
 		*cycle += _avr_push_addr(avr, *new_pc) - 1;
 	*new_pc = z << 1;
 	(*cycle)++;
 	TRACE_JUMP();
 }
 
-INLINE_INST_DECL(call_jmp_long)
+INLINE_INST_DECL(call_jmp_long, const uint16_t as_opcode)
 {
-	int push = opcode & 2;
+	const int call = as_opcode & 2;
 
 	avr_flashaddr_t a = ((opcode & 0x01f0) >> 3) | (opcode & 1);
 	uint16_t x = _avr_flash_read16le(avr, *new_pc);
 	a = (a << 16) | x;
-	STATE("%s 0x%06x\n", push ? "call" : "jmp", a);
-	if (push)
+	STATE("%s 0x%06x\n", call ? "call" : "jmp", a);
+	if (call)
 		*cycle += 1 + _avr_push_addr(avr, *new_pc + 2);
 	else
 		*cycle += 2;
@@ -1051,11 +1030,31 @@ INLINE_INST_DECL(call_jmp_long)
 	STACK_FRAME_PUSH();
 }
 
-INLINE_INST_DECL(cbi_sbi)
+INLINE_INST_DECL(call_jmp_r, const uint16_t as_opcode)
 {
+	const int call = as_opcode & 0x1000;
+
+	get_o12(opcode);
+	STATE("r%s .%d [%04x]\n", call ? "call" : "jmp", o >> 1, *new_pc + o);
+	if(call)
+		*cycle += _avr_push_addr(avr, *new_pc);
+	else
+		(*cycle)++;
+	*new_pc = *new_pc + o;
+	if (!call || (o != 0)) {
+		TRACE_JUMP();
+	}
+	if(call) {
+		STACK_FRAME_PUSH();
+	}
+}
+
+INLINE_INST_DECL(cbi_sbi, const uint16_t as_opcode)
+{
+	const int set = as_opcode & 0x0200;
+
 	get_io5_b3mask(opcode);
 	uint8_t res = _avr_get_ram(avr, io);
-	int set = opcode & 0x0200;
 	if(set)
 		res |= mask;
 	else
@@ -1064,6 +1063,282 @@ INLINE_INST_DECL(cbi_sbi)
 	_avr_set_ram(avr, io, res);
 	(*cycle)++;
 }
+
+INLINE_INST_DECL(elpm_lpm, const uint16_t as_opcode)
+{
+	const int lpm_r0_z = as_opcode == INST_OPCODE(lpm_r0_z); /* ? LPM 0, Z */
+	const int elpm = (!lpm_r0_z) ? (as_opcode & 2) : 0;
+	
+	if (elpm && !avr->rampz)
+		_avr_invalid_opcode(avr);
+
+	uint8_t rzd = 0;
+	int op = 0;
+	
+	if (!lpm_r0_z) {
+		get_d5(opcode);
+
+		rzd = d;
+		op = opcode & 1;
+	}
+	
+	uint32_t z = _avr_data_read16le(avr, R_ZL);
+	
+	if (elpm) {
+		uint8_t rampzv = avr->data[avr->rampz];
+		STATE("elpm %s, (Z[%02x:%04x]%s)\n", avr_regname(rzd), rampzv, z & 0xffff, op ? "+" : "");
+		z |= rampzv << 16;
+	} else {
+		STATE("lpm %s, (Z[%04x]%s)\n", avr_regname(rzd), z, op ? "+" : "");
+	}
+
+	_avr_set_r(avr, rzd, avr->flash[z]);
+	if (op) {
+		z++;
+		if (elpm)
+			_avr_set_r(avr, avr->rampz, z >> 16);
+			
+		_avr_set_r16le_hl(avr, R_ZL, z);
+	}
+	*cycle += 2; // 3 cycles
+}
+
+INLINE_INST_DECL(in_out, const uint16_t as_opcode)
+{
+	const int out = as_opcode & 0x800;
+
+	get_d5_a6(opcode);
+	STATE("%s %s, %s[%02x]\n", out ? "out" : "in" , avr_regname(A), avr_regname(d), avr->data[d]);
+	if (out)
+		_avr_set_ram(avr, A, avr->data[d]);
+	else
+		_avr_set_r(avr, d, _avr_get_ram(avr, A));
+}
+
+INLINE_INST_DECL(ld_st, const uint16_t as_opcode)
+{
+	const int load = !(as_opcode & 0x0200);
+	const int op = as_opcode & 3;
+
+	uint8_t vd = 0;
+	get_d5(opcode);
+	if (!load)
+		vd = avr->data[d];
+
+	uint8_t  rXYZ = ((uint8_t []){R_ZL, 0x00, R_YL, R_XL})[(opcode & 0x000c) >> 2];
+	uint16_t vXYZ = _avr_data_read16le(avr, rXYZ);
+
+	if (load) {
+		STATE("ld %s, %s%c[%04x]%s\n", 
+			avr_regname(d), op == 2 ? "--" : "", 
+			*avr_regname(rXYZ), vXYZ, op == 1 ? "++" : "");
+	} else {
+		STATE("st %s%c[%04x]%s, %s[%02x] \n", 
+			op == 2 ? "--" : "", *avr_regname(rXYZ), vXYZ, 
+			op == 1 ? "++" : "", avr_regname(d), vd);
+	}
+
+	(*cycle)++; // 2 cycles (1 for tinyavr, except with inc/dec 2)
+	if (op == 2) vXYZ--;
+	if (load)
+		vd = _avr_get_ram(avr, vXYZ);
+	else
+		_avr_set_ram(avr, vXYZ, vd);
+	if (op == 1) vXYZ++;
+	if (op)
+		_avr_set_r16le_hl(avr, rXYZ, vXYZ);
+	if (load)
+		_avr_set_r(avr, d, vd);
+}
+
+INLINE_INST_DECL(ldd_std, const uint16_t as_opcode)
+{
+	const int load = !(as_opcode & 0x0200);
+
+	get_d5_q6(opcode);
+	uint8_t  rYZ = (opcode & 0x0008) ? R_YL : R_ZL;
+	uint16_t vYZ = _avr_data_read16le(avr, rYZ);
+	if (load) {
+		uint8_t vvr = _avr_get_ram(avr, vYZ + q);
+		STATE("ld %s, (%c+%d[%04x])=[%02x]\n", 
+			avr_regname(d), *avr_regname(rYZ), 
+			q, vYZ + q, vvr);
+		_avr_set_r(avr, d, vvr);
+	} else {
+		uint8_t vd = avr->data[d];
+		STATE("st (%c+%d[%04x]), %s[%02x]\n", 
+			*avr_regname(rYZ), q, vYZ + q, 
+			avr_regname(d), vd);
+		_avr_set_ram(avr, vYZ + q, vd);
+	}
+	(*cycle)++; // 2 cycles, 3 for tinyavr
+}
+
+INLINE_INST_DECL(lds_sts, const uint16_t as_opcode)
+{
+	const int load = !(as_opcode & 0x0200);
+
+	get_vd5(opcode);
+	uint16_t x = _avr_flash_read16le(avr, *new_pc);
+	*new_pc += 2;
+
+	if (load) {
+		STATE("lds %s[%02x], 0x%04x\n", avr_regname(d), vd, x);
+		_avr_set_r(avr, d, _avr_get_ram(avr, x));
+	} else {
+		STATE("sts 0x%04x, %s[%02x]\n", x, avr_regname(d), vd);
+	}
+
+	(*cycle)++; // 2 cycles
+
+	if (!load)
+		_avr_set_ram(avr, x, vd);
+}
+
+INLINE_INST_DECL(mul_complex, const uint16_t as_opcode)
+{
+	int8_t r = 16 + (opcode & 0x7);
+	int8_t d = 16 + ((opcode >> 4) & 0x7);
+	int16_t res = 0;
+	uint8_t c = 0;
+	T(const char * name = "";)
+	switch (as_opcode & 0x88) {
+		case 0x00: 	// MULSU -- Multiply Signed Unsigned -- 0000 0011 0ddd 0rrr
+			res = ((uint8_t)avr->data[r]) * ((int8_t)avr->data[d]);
+			c = (res >> 15) & 1;
+			T(name = "mulsu";)
+			break;
+		case 0x08: 	// FMUL -- Fractional Multiply Unsigned -- 0000 0011 0ddd 1rrr
+			res = ((uint8_t)avr->data[r]) * ((uint8_t)avr->data[d]);
+			c = (res >> 15) & 1;
+			res <<= 1;
+			T(name = "fmul";)
+			break;
+		case 0x80: 	// FMULS -- Multiply Signed -- 0000 0011 1ddd 0rrr
+			res = ((int8_t)avr->data[r]) * ((int8_t)avr->data[d]);
+			c = (res >> 15) & 1;
+			res <<= 1;
+			T(name = "fmuls";)
+			break;
+		case 0x88: 	// FMULSU -- Multiply Signed Unsigned -- 0000 0011 1ddd 1rrr
+			res = ((uint8_t)avr->data[r]) * ((int8_t)avr->data[d]);
+			c = (res >> 15) & 1;
+			res <<= 1;
+			T(name = "fmulsu";)
+			break;
+	}
+	(*cycle)++;
+	STATE("%s %s[%d], %s[%02x] = %d\n", name, avr_regname(d), ((int8_t)avr->data[d]), avr_regname(r), ((int8_t)avr->data[r]), res);
+	_avr_set_r16le(avr, 0, res);
+	avr->sreg[S_C] = c;
+	avr->sreg[S_Z] = res == 0;
+	SREG();
+}
+
+INLINE_INST_DECL(skip_if, uint16_t res)
+{
+	if (res) {
+		if (_avr_is_instruction_32_bits(avr, *new_pc)) {
+			*new_pc += 4; *cycle += 2;
+		} else {
+			*new_pc += 2; (*cycle)++;
+		}
+	}
+}
+
+INLINE_INST_DECL(skip_io_r_logic, const uint16_t as_opcode, uint8_t rio, uint8_t vrio, uint8_t mask, char *opname_array[2])
+{
+	const int set = (as_opcode & 0x0200) != 0;
+
+	int branch = ((vrio & mask) && set) || (!(vrio & mask) && !set);
+	STATE("%s %s[%02x], 0x%02x\t; Will%s branch\n", opname_array[set], avr_regname(rio), vrio, mask, branch ? "":" not");
+	INST_SUB_CALL(skip_if, branch);
+}
+
+INLINE_INST_DECL(sbic_sbis, const uint16_t as_opcode)
+{
+	get_io5_b3mask(opcode);
+	uint8_t vio = _avr_get_ram(avr, io);
+	char *opname_array[2] = { "sbic", "sbis" };
+	INST_SUB_CALL(skip_io_r_logic, as_opcode, io, vio, mask, opname_array);
+}
+
+INLINE_INST_DECL(sbrc_sbrs, const uint16_t as_opcode)
+{
+	get_vd5_s3_mask(opcode);
+	char *opname_array[2] = { "sbrc", "sbrs" };
+	INST_SUB_CALL(skip_io_r_logic, as_opcode, d, vd, mask, opname_array);
+}
+
+INLINE_INST_DECL(sreg_cl_se, const uint16_t as_opcode)
+{
+	const int clr = as_opcode & 0x0080;
+
+	get_sreg_bit(opcode);
+	STATE("%s%c\n", clr ? "cl" : "se", _sreg_bit_name[b]);
+	avr_sreg_set(avr, b, clr ? 0 : 1);
+	SREG();
+}
+
+INLINE_INST_DECL(d5r5_common_helper, const uint8_t operation, const uint8_t flags)
+{
+	get_vd5_vr5(opcode);
+	INST_SUB_CALL(alu_common_helper, operation, flags, d, vd, r, vr);
+}
+
+INLINE_INST_DECL(h4k8_common_helper, const uint8_t operation, const uint8_t flags)
+{
+	get_vh4_k8(opcode);
+	INST_SUB_CALL(alu_common_helper, operation, flags, h, vh, -1, k);
+}
+
+/*
+ * end common code, begin specialized instruction handlers
+ *
+ * inlining here may not be as important.
+ */
+
+INST_SUB_CALL_DECL(add, d5r5_common_helper, INST_OP_ADD, INST_FLAG_SAVE_RESULT)
+INST_SUB_CALL_DECL(addc, d5r5_common_helper, INST_OP_ADD, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT)
+
+INST_AS_OPCODE_SUB_CALL_DECL(adiw, adiw_sbiw)
+
+INST_SUB_CALL_DECL(and, d5r5_common_helper, INST_OP_AND, INST_FLAG_SAVE_RESULT)
+INST_SUB_CALL_DECL(andi, h4k8_common_helper, INST_OP_AND, INST_FLAG_SAVE_RESULT)
+
+INST_DECL(asr)
+{
+	get_vd5(opcode);
+	uint8_t res = ((int8_t)vd) >> 1; /* (vd >> 1) | (vd & 0x80); */
+	STATE("asr %s[%02x]\n", avr_regname(d), vd);
+	_avr_set_r(avr, d, res);
+	_avr_flags_zcnvs(avr, res, vd);
+	SREG();
+}
+
+INST_AS_OPCODE_SUB_CALL_DECL(bld, bld_bst)
+
+INST_AS_OPCODE_SUB_CALL_DECL(brxc, brxc_brxs)
+INST_AS_OPCODE_SUB_CALL_DECL(brxs, brxc_brxs)
+
+INST_AS_OPCODE_SUB_CALL_DECL(bst, bld_bst)
+
+INST_DECL(break)
+{
+	STATE("break\n");
+	if (avr->gdb) {
+		// if gdb is on, we break here as in here
+		// and we do so until gdb restores the instruction
+		// that was here before
+		avr->state = cpu_StepDone;
+		*new_pc = avr->pc;
+		*cycle = 0;
+	}
+}
+
+INST_AS_OPCODE_SUB_CALL_DECL(cbi, cbi_sbi)
+
+INST_AS_OPCODE_SUB_CALL_DECL(clr_sreg, sreg_cl_se)
 
 INST_DECL(com)
 {
@@ -1099,18 +1374,22 @@ INST_DECL(dec)
 	SREG();
 }
 
+INST_AS_OPCODE_SUB_CALL_DECL(eicall, call_jmp_ei)
+INST_AS_OPCODE_SUB_CALL_DECL(eijmp, call_jmp_ei)
+
+INST_AS_OPCODE_SUB_CALL_DECL(elpm_z, elpm_lpm)
+INST_AS_OPCODE_SUB_CALL_DECL(elpm_z_post_inc, elpm_lpm)
+
 INST_SUB_CALL_DECL(eor, d5r5_common_helper, INST_OP_EOR, INST_FLAG_SAVE_RESULT)
 
-INLINE_INST_DECL(in_out)
-{
-	get_d5_a6(opcode);
-	int out = opcode & 0x800;
-	STATE("%s %s, %s[%02x]\n", out ? "out" : "in" , avr_regname(A), avr_regname(d), avr->data[d]);
-	if (out)
-		_avr_set_ram(avr, A, avr->data[d]);
-	else
-		_avr_set_r(avr, d, _avr_get_ram(avr, A));
-}
+INST_AS_OPCODE_SUB_CALL_DECL(fmul, mul_complex)
+INST_AS_OPCODE_SUB_CALL_DECL(fmuls, mul_complex)
+INST_AS_OPCODE_SUB_CALL_DECL(fmulsu, mul_complex)
+
+INST_AS_OPCODE_SUB_CALL_DECL(icall, call_jmp_ei)
+INST_AS_OPCODE_SUB_CALL_DECL(ijmp, call_jmp_ei)
+
+INST_AS_OPCODE_SUB_CALL_DECL(in, in_out)
 
 INST_DECL(inc)
 {
@@ -1123,23 +1402,11 @@ INST_DECL(inc)
 	SREG();
 }
 
-INLINE_INST_DECL(ld)
-{
-	int op = opcode & 3;
-	get_d5(opcode);
-	uint8_t  rXYZ = ((uint8_t []){R_ZL, 0x00, R_YL, R_XL})[(opcode & 0x000c) >> 2];
-	uint16_t vXYZ = _avr_data_read16le(avr, rXYZ);
-	STATE("ld %s, %s%c[%04x]%s\n", 
-		avr_regname(d), op == 2 ? "--" : "", 
-		*avr_regname(rXYZ), vXYZ, op == 1 ? "++" : "");
-	(*cycle)++; // 2 cycles (1 for tinyavr, except with inc/dec 2)
-	if (op == 2) vXYZ--;
-	uint8_t vd = _avr_get_ram(avr, vXYZ);
-	if (op == 1) vXYZ++;
-	if (op)
-		_avr_set_r16le_hl(avr, rXYZ, vXYZ);
-	_avr_set_r(avr, d, vd);
-}
+INST_AS_OPCODE_SUB_CALL_DECL(lcall, call_jmp_long)
+
+INST_AS_OPCODE_SUB_CALL_DECL(ld_no_op, ld_st)
+INST_AS_OPCODE_SUB_CALL_DECL(ld_post_inc, ld_st)
+INST_AS_OPCODE_SUB_CALL_DECL(ld_pre_dec, ld_st)
 
 INLINE_INST_DECL(ldi)
 {
@@ -1148,88 +1415,15 @@ INLINE_INST_DECL(ldi)
 	_avr_set_r(avr, h, k);
 }
 
-INLINE_INST_DECL(ldd_std)
-{
-	uint8_t  rYZ = (opcode & 0x0008) ? R_YL : R_ZL;
-	uint16_t vYZ = _avr_data_read16le(avr, rYZ);
-	get_d5_q6(opcode);
-	if (opcode & 0x0200) {
-		uint8_t vd = avr->data[d];
-		STATE("st (%c+%d[%04x]), %s[%02x]\n", 
-			*avr_regname(rYZ), q, vYZ + q, 
-			avr_regname(d), vd);
-		_avr_set_ram(avr, vYZ + q, vd);
-	} else {
-		uint8_t vvr = _avr_get_ram(avr, vYZ + q);
-		STATE("ld %s, (%c+%d[%04x])=[%02x]\n", 
-			avr_regname(d), *avr_regname(rYZ), 
-			q, vYZ + q, vvr);
-		_avr_set_r(avr, d, vvr);
-	}
-	(*cycle)++; // 2 cycles, 3 for tinyavr
-}
+INST_AS_OPCODE_SUB_CALL_DECL(ldd, ldd_std)
 
-INLINE_INST_DECL(lds_sts)
-{
-	get_vd5(opcode);
-	uint16_t x = _avr_flash_read16le(avr, *new_pc);
-	*new_pc += 2;
-	
-	int sts = opcode & 0x0200;
-	
-	if (sts) {
-		STATE("sts 0x%04x, %s[%02x]\n", x, avr_regname(d), vd);
-	} else {
-		STATE("lds %s[%02x], 0x%04x\n", avr_regname(d), vd, x);
-	}
+INST_AS_OPCODE_SUB_CALL_DECL(lds, lds_sts)
 
-	if (!sts)
-		_avr_set_r(avr, d, _avr_get_ram(avr, x));
+INST_AS_OPCODE_SUB_CALL_DECL(ljmp, call_jmp_long)
 
-	(*cycle)++; // 2 cycles
-
-	if (sts)
-		_avr_set_ram(avr, x, vd);
-}
-
-INLINE_INST_DECL(lpm)
-{
-	int elpm = (opcode != 0x95c8) ? (opcode & 2) : 0;
-	
-	if (elpm && !avr->rampz)
-		_avr_invalid_opcode(avr);
-
-
-	uint8_t rzd = 0;
-	int op = 0;
-	
-	if( opcode != 0x95c8 /* LPM 0, Z */) {
-		get_d5(opcode);
-
-		rzd = d;
-		op = opcode & 1;
-	}
-	
-	uint32_t z = _avr_data_read16le(avr, R_ZL);
-	
-	if (elpm) {
-		uint8_t rampzv = avr->data[avr->rampz];
-		STATE("elpm %s, (Z[%02x:%04x]%s)\n", avr_regname(rzd), rampzv, z & 0xffff, op ? "+" : "");
-		z |= rampzv << 16;
-	} else {
-		STATE("lpm %s, (Z[%04x]%s)\n", avr_regname(rzd), z, op ? "+" : "");
-	}
-
-	_avr_set_r(avr, rzd, avr->flash[z]);
-	if (op) {
-		z++;
-		if (elpm)
-			_avr_set_r(avr, avr->rampz, z >> 16);
-			
-		_avr_set_r16le_hl(avr, R_ZL, z);
-	}
-	*cycle += 2; // 3 cycles
-}
+INST_AS_OPCODE_SUB_CALL_DECL(lpm_r0_z, elpm_lpm)
+INST_AS_OPCODE_SUB_CALL_DECL(lpm_z, elpm_lpm)
+INST_AS_OPCODE_SUB_CALL_DECL(lpm_z_post_inc, elpm_lpm)
 
 INST_DECL(lsr)
 {
@@ -1271,46 +1465,6 @@ INST_DECL(mul)
 	SREG();
 }
 
-INST_DECL(mul_complex)
-{
-	int8_t r = 16 + (opcode & 0x7);
-	int8_t d = 16 + ((opcode >> 4) & 0x7);
-	int16_t res = 0;
-	uint8_t c = 0;
-	T(const char * name = "";)
-	switch (opcode & 0x88) {
-		case 0x00: 	// MULSU -- Multiply Signed Unsigned -- 0000 0011 0ddd 0rrr
-			res = ((uint8_t)avr->data[r]) * ((int8_t)avr->data[d]);
-			c = (res >> 15) & 1;
-			T(name = "mulsu";)
-			break;
-		case 0x08: 	// FMUL -- Fractional Multiply Unsigned -- 0000 0011 0ddd 1rrr
-			res = ((uint8_t)avr->data[r]) * ((uint8_t)avr->data[d]);
-			c = (res >> 15) & 1;
-			res <<= 1;
-			T(name = "fmul";)
-			break;
-		case 0x80: 	// FMULS -- Multiply Signed -- 0000 0011 1ddd 0rrr
-			res = ((int8_t)avr->data[r]) * ((int8_t)avr->data[d]);
-			c = (res >> 15) & 1;
-			res <<= 1;
-			T(name = "fmuls";)
-			break;
-		case 0x88: 	// FMULSU -- Multiply Signed Unsigned -- 0000 0011 1ddd 1rrr
-			res = ((uint8_t)avr->data[r]) * ((int8_t)avr->data[d]);
-			c = (res >> 15) & 1;
-			res <<= 1;
-			T(name = "fmulsu";)
-			break;
-	}
-	(*cycle)++;
-	STATE("%s %s[%d], %s[%02x] = %d\n", name, avr_regname(d), ((int8_t)avr->data[d]), avr_regname(r), ((int8_t)avr->data[r]), res);
-	_avr_set_r16le(avr, 0, res);
-	avr->sreg[S_C] = c;
-	avr->sreg[S_Z] = res == 0;
-	SREG();
-}
-
 INST_DECL(muls)
 {
 	int8_t r = 16 + (opcode & 0xf);
@@ -1323,6 +1477,8 @@ INST_DECL(muls)
 	(*cycle)++;
 	SREG();
 }
+
+INST_AS_OPCODE_SUB_CALL_DECL(mulsu, mul_complex)
 
 INST_DECL(neg)
 {
@@ -1364,29 +1520,9 @@ INST_DECL(push)
 	(*cycle)++;
 }
 
-INLINE_INST_DECL(r_call_jmp)
-{
-	get_o12(opcode);
+INST_AS_OPCODE_SUB_CALL_DECL(out, in_out)
 
-	int push = opcode & 0x1000;
-
-	STATE("%s .%d [%04x]\n", push ? "rcall" : "rjmp", o >> 1, *new_pc + o);
-
-	if(push)
-		*cycle += _avr_push_addr(avr, *new_pc);
-	else
-		(*cycle)++;
-
-	*new_pc = *new_pc + o;
-
-	if (!push || (o != 0)) {
-		TRACE_JUMP();
-	}
-
-	if(push) {
-		STACK_FRAME_PUSH();
-	}
-}
+INST_AS_OPCODE_SUB_CALL_DECL(rcall, call_jmp_r)
 
 INST_DECL(ret)
 {
@@ -1404,6 +1540,8 @@ INST_DECL(reti)
 	INST_SUB_CALL(ret);
 }
 
+INST_AS_OPCODE_SUB_CALL_DECL(rjmp, call_jmp_r)
+
 INST_DECL(ror)
 {
 	get_vd5(opcode);
@@ -1417,28 +1555,19 @@ INST_DECL(ror)
 INST_SUB_CALL_DECL(sbc, d5r5_common_helper, INST_OP_SUB, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT)
 INST_SUB_CALL_DECL(sbci, h4k8_common_helper, INST_OP_SUB, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT)
 
-INLINE_INST_DECL(skip_io_r_logic, uint8_t rio, uint8_t vrio, uint8_t mask, char *opname_array[2])
-{
-	int set = (opcode & 0x0200) != 0;
-	int branch = ((vrio & mask) && set) || (!(vrio & mask) && !set);
-	STATE("%s %s[%02x], 0x%02x\t; Will%s branch\n", opname_array[set], avr_regname(rio), vrio, mask, branch ? "":" not");
-	INST_SUB_CALL(skip_if, branch);
-}
+INST_AS_OPCODE_SUB_CALL_DECL(sbi, cbi_sbi)
 
-INLINE_INST_DECL(sbic_sbis)
-{
-	get_io5_b3mask(opcode);
-	uint8_t vio = _avr_get_ram(avr, io);
-	char *opname_array[2] = { "sbic", "sbis" };
-	INST_SUB_CALL(skip_io_r_logic, io, vio, mask, opname_array);
-}
+INST_AS_OPCODE_SUB_CALL_DECL(sbic, sbic_sbis)
+INST_AS_OPCODE_SUB_CALL_DECL(sbis, sbic_sbis)
 
-INLINE_INST_DECL(sbrc_sbrs)
-{
-	get_vd5_s3_mask(opcode);
-	char *opname_array[2] = { "sbrc", "sbrs" };
-	INST_SUB_CALL(skip_io_r_logic, d, vd, mask, opname_array);
-}
+INST_AS_OPCODE_SUB_CALL_DECL(sbiw, adiw_sbiw)
+
+INST_AS_OPCODE_SUB_CALL_DECL(sbrc, sbrc_sbrs)
+INST_AS_OPCODE_SUB_CALL_DECL(sbrs, sbrc_sbrs)
+
+INST_AS_OPCODE_SUB_CALL_DECL(std, ldd_std)
+
+INST_AS_OPCODE_SUB_CALL_DECL(sts, lds_sts)
 
 INST_SUB_CALL_DECL(sub, d5r5_common_helper, INST_OP_SUB, INST_FLAG_SAVE_RESULT)
 INST_SUB_CALL_DECL(subi, h4k8_common_helper, INST_OP_SUB, INST_FLAG_SAVE_RESULT)
@@ -1460,30 +1589,11 @@ INST_DECL(spm)
 	avr_ioctl(avr, AVR_IOCTL_FLASH_SPM, 0);
 }
 
-INLINE_INST_DECL(sreg_cl_se)
-{
-	get_sreg_bit(opcode);
-	STATE("%s%c\n", opcode & 0x0080 ? "cl" : "se", _sreg_bit_name[b]);
-	avr_sreg_set(avr, b, (opcode & 0x0080) == 0);
-	SREG();
-}
+INST_AS_OPCODE_SUB_CALL_DECL(set_sreg, sreg_cl_se)
 
-INLINE_INST_DECL(st)
-{
-	int op = opcode & 3;
-	get_vd5(opcode);
-	uint8_t  rXYZ = ((uint8_t []){R_ZL, 0x00, R_YL, R_XL})[(opcode & 0x000c) >> 2];
-	uint16_t vXYZ = _avr_data_read16le(avr, rXYZ);
-	STATE("st %s%c[%04x]%s, %s[%02x] \n", 
-		op == 2 ? "--" : "", *avr_regname(rXYZ), vXYZ, 
-		op == 1 ? "++" : "", avr_regname(d), vd);
-	(*cycle)++; // 2 cycles, except tinyavr
-	if (op == 2) vXYZ--;
-	_avr_set_ram(avr, vXYZ, vd);
-	if (op == 1) vXYZ++;
-	if (op)
-		_avr_set_r16le_hl(avr, rXYZ, vXYZ);
-}
+INST_AS_OPCODE_SUB_CALL_DECL(st_no_op, ld_st)
+INST_AS_OPCODE_SUB_CALL_DECL(st_post_inc, ld_st)
+INST_AS_OPCODE_SUB_CALL_DECL(st_pre_dec, ld_st)
 
 INST_DECL(swap)
 {
@@ -1542,7 +1652,7 @@ _avr_inst_collision_detected(
 			extend_opcode = ((_avr_inst_ ## _opcode ## _ ## _opname) << 24) | opcode; \
 			INST_SUB_CALL(_opname); \
 		} else { \
-			_avr_inst_collision_detected(avr, opcode, INST_MASK_ ## _opmask, #_opname, extend_opcode); \
+			if (0) _avr_inst_collision_detected(avr, opcode, INST_MASK_ ## _opmask, #_opname, extend_opcode); \
 		} \
 	}
 
@@ -1566,7 +1676,7 @@ _avr_inst_collision_detected(
  
 INST_DECL(decode_one)
 {
-	int collision_detected = 0, invalid_opcode = 1;
+	int invalid_opcode = 1;
 	uint32_t extend_opcode = 0;
 
 	opcode = _avr_flash_read16le(avr, avr->pc);
@@ -1575,9 +1685,6 @@ INST_DECL(decode_one)
 
 	if (invalid_opcode)
 		_avr_invalid_opcode(avr);
-
-	if (collision_detected)
-		avr->state = cpu_Done;
 
 	if (extend_opcode)
 		_avr_extend_flash_write32le(avr, avr->pc, extend_opcode);
