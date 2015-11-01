@@ -1446,8 +1446,8 @@ INST_DECL(mov)
 
 INST_DECL(movw)
 {
-	uint8_t d = ((opcode >> 4) & 0xf) << 1;
-	uint8_t r = ((opcode) & 0xf) << 1;
+	uint8_t d = (opcode >> 3) & 0x1e; /* ((opcode >> 4) & 0x0f) << 1; */
+	uint8_t r = (opcode & 0xf) << 1;
 	uint16_t vr = _avr_data_read16le(avr, r);
 	STATE("movw %s:%s, %s:%s[%04x]\n", avr_regname(d), avr_regname(d+1), avr_regname(r), avr_regname(r+1), vr);
 	_avr_set_r16le(avr, d, vr);
@@ -1486,7 +1486,7 @@ INST_DECL(neg)
 	uint8_t res = 0x00 - vd;
 	STATE("neg %s[%02x] = %02x\n", avr_regname(d), vd, res);
 	_avr_set_r(avr, d, res);
-	avr->sreg[S_H] = ((res >> 3) | (vd >> 3)) & 1;
+	avr->sreg[S_H] = ((res | vd) >> 3) & 1; /* ((res >> 3) | (vd >> 3)) & 1; */
 	avr->sreg[S_V] = res == 0x80;
 	avr->sreg[S_C] = res != 0;
 	_avr_flags_zns(avr, res);
