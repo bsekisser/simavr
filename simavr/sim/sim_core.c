@@ -480,10 +480,6 @@ _make_opcode_h8_0r8_1r8_2r8(
 		get_h4_k8(o) \
 		const uint8_t vh = avr->data[h];
 
-#define get_d5_q6(o) \
-		get_d5(o) \
-		const uint8_t q = ((o & 0x2000) >> 8) | ((o & 0x0c00) >> 7) | (o & 0x7);
-
 #define get_io5(o) \
 		const uint8_t io = ((o >> 3) & 0x1f) + 32;
 
@@ -582,9 +578,17 @@ INST_OPCODE_XLAT_DECL(D5rXYZ)
 	return *extend_opcode = opcode;
 }
 
+#define get_d5_rYZ_q6(_xop) \
+		get_R(_xop, 0, d); \
+		get_R(_xop, 1, rYZ); \
+		get_R(_xop, 2, q);
+
 INST_OPCODE_XLAT_DECL(D5rYZ_Q6)
 {
-	return *extend_opcode = opcode;
+	get_d5(opcode);
+	const uint8_t rYZ = (opcode & 0x0008) ? R_YL : R_ZL;
+	const uint8_t q = ((opcode & 0x2000) >> 8) | ((opcode & 0x0c00) >> 7) | (opcode & 0x7);
+	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, rYZ, q);
 }
 
 INST_OPCODE_XLAT_DECL(H4K8)
@@ -1308,8 +1312,7 @@ INLINE_INST_DECL(ldd_std, const uint16_t as_opcode)
 {
 	const int load = !(as_opcode & 0x0200);
 
-	get_d5_q6(opcode);
-	uint8_t  rYZ = (opcode & 0x0008) ? R_YL : R_ZL;
+	get_d5_rYZ_q6(opcode);
 	uint16_t vYZ = _avr_data_read16le(avr, rYZ);
 	if (load) {
 		uint8_t vvr = _avr_get_ram(avr, vYZ + q);
