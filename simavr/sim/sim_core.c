@@ -499,11 +499,6 @@ _make_opcode_h8_0r8_1r8_2r8(
 #define get_o12(op) \
 		const int16_t o = ((int16_t)((op << 4) & 0xffff)) >> 3;
 
-#define get_vp2_k6(o) \
-		const uint8_t p = 24 + ((o >> 3) & 0x6); \
-		const uint8_t k = ((o & 0x00c0) >> 2) | (o & 0xf); \
-		const uint16_t vp = _avr_data_read16le(avr, p);
-
 #define get_sreg_bit(o) \
 		const uint8_t b = (o >> 4) & 7;
 
@@ -607,9 +602,15 @@ INST_OPCODE_XLAT_DECL(O12)
 	return *extend_opcode = opcode;
 }
 
+#define get_vp2_k6(_xop) \
+		get_RvR16le(_xop, 0, p); \
+		get_R(_xop, 1, k);
+
 INST_OPCODE_XLAT_DECL(P2K6)
 {
-	return *extend_opcode = opcode;
+	const uint8_t p = 24 + ((opcode >> 3) & 0x6);
+	const uint8_t k = ((opcode & 0x00c0) >> 2) | (opcode & 0xf);
+	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, p, k, 0);
 }
 
 INST_OPCODE_XLAT_DECL(SREG)
