@@ -450,10 +450,6 @@ _make_opcode_h8_0r8_1r8_2r8(
 #define get_r5(o) \
 		const uint8_t r = ((o >> 5) & 0x10) | (o & 0xf);
 
-#define get_d5_a6(o) \
-		get_d5(o); \
-		const uint8_t A = ((((o >> 9) & 3) << 4) | ((o) & 0xf)) + 32;
-
 #define get_vd5_s3(o) \
 		get_vd5(o); \
 		const uint8_t s = o & 7;
@@ -528,8 +524,24 @@ _avr_inst_opcode_xlat_io5b3(
 #define AVR_INST_OPCODE_XLAT_D5(_handler) \
 		extend_opcode = opcode
 
+#define get_d5_a6(_xop) \
+		get_R(_xop, 0, d); \
+		get_R(_xop, 1, A); \
+
+static void
+_avr_inst_opcode_xlat_d5a6(
+	avr_t * avr, 
+	uint32_t opcode, 
+	uint32_t * extend_opcode, 
+	uint8_t handler)
+{
+	get_d5(opcode);
+	const uint8_t A = ((((opcode >> 9) & 3) << 4) | ((opcode) & 0xf)) + 32;
+	*extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, A, 0);
+}
+
 #define AVR_INST_OPCODE_XLAT_D5A6(_handler) \
-		extend_opcode = opcode
+		_avr_inst_opcode_xlat_d5a6(avr, opcode, &extend_opcode, _handler)
 
 #define AVR_INST_OPCODE_XLAT_D5B3(_handler) \
 		extend_opcode = opcode
