@@ -480,17 +480,6 @@ _make_opcode_h8_0r8_1r8_2r8(
 		get_h4_k8(o) \
 		const uint8_t vh = avr->data[h];
 
-#define get_io5(o) \
-		const uint8_t io = ((o >> 3) & 0x1f) + 32;
-
-#define get_io5_b3(o) \
-		get_io5(o); \
-		const uint8_t b = o & 0x7;
-
-#define get_io5_b3mask(o) \
-		get_io5(o); \
-		const uint8_t mask = 1 << (o & 0x7);
-
 //	const int16_t o = ((int16_t)(op << 4)) >> 3; // CLANG BUG!
 #define get_o12(op) \
 		const int16_t o = ((int16_t)((op << 4) & 0xffff)) >> 3;
@@ -538,9 +527,21 @@ INST_OPCODE_XLAT_DECL(ABS22)
 	return *extend_opcode = opcode;
 }
 
+#define get_io5_b3_mask(_xop) \
+		get_R(_xop, 0, io); \
+		get_R(_xop, 1, b); \
+		get_R(_xop, 2, mask);
+
+#define get_io5_b3mask(_xop) \
+		get_R(_xop, 0, io); \
+		get_R(_xop, 2, mask);
+
 INST_OPCODE_XLAT_DECL(A5B3)
 {
-	return *extend_opcode = opcode;
+	const uint8_t io = ((opcode >> 3) & 0x1f) + 32;
+	const uint8_t b = opcode & 0x7;
+	const uint8_t mask = 1 << (opcode & 0x7);
+	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, io, b, mask);
 }
 
 INST_OPCODE_XLAT_DECL(D5)
