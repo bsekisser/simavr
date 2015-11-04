@@ -542,6 +542,25 @@ _make_opcode_h8_0r8_1r8_2r8(
 #define AVR_INST_OPCODE_XLAT_D5rYZ_Q6(_handler) \
 		extend_opcode = opcode
 
+#define get_d5_rXYZ(_xop) \
+		get_R(_xop, 0, d); \
+		get_R(_xop, 1, rXYZ); \
+
+static void
+_avr_inst_opcode_xlat_d5rXYZ(
+	avr_t * avr, 
+	uint32_t opcode, 
+	uint32_t * extend_opcode,
+	uint8_t handler)
+{
+	get_d5(opcode);
+	const uint8_t rXYZ = ((uint8_t []){R_ZL, 0x00, R_YL, R_XL})[(opcode & 0x000c) >> 2];
+	*extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, rXYZ, 0);
+}
+
+#define AVR_INST_OPCODE_XLAT_D5rXYZ(_handler) \
+		_avr_inst_opcode_xlat_d5rXYZ(avr, opcode, &extend_opcode, _handler)
+
 #define get_d5_rYZ_q6(_xop) \
 		get_R(_xop, 0, d); \
 		get_R(_xop, 1, rYZ); \
@@ -828,12 +847,12 @@ typedef void (*avr_inst_pfn)(
 	INST_ESAC(0x9002, D5rXYZ, ld_pre_dec) /* LD -- 0x9002 -- Load Indirect from Data using --XYZ -- 1001 00sd dddd iioo */\
 	INST_ESAC(0x9006, D5, elpm_z) /* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
 	INST_ESAC(0x9007, D5, elpm_z_post_inc) /* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
-	INST_ESAC(0x900c, D5, ld_no_op) /* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
+	XLAT_INST_ESAC(0x900c, D5, D5rXYZ, ld_no_op) /* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
 	INST_ESAC(0x900f, D5, pop) /* POP -- 0x900f -- 1001 000d dddd 1111 */\
 	INST_ESAC(0x9200, D5, sts) /* STS -- Store Direct to Data Space, 32 bits -- 1001 0010 0000 0000 */\
 	INST_ESAC(0x9201, D5rXYZ, st_post_inc) /* ST -- Store Indirect Data Space XYZ++ -- 1001 001d dddd iioo */\
 	INST_ESAC(0x9202, D5rXYZ, st_pre_dec) /* ST -- Store Indirect Data Space --XYZ -- 1001 001d dddd iioo */\
-	INST_ESAC(0x920c, D5, st_no_op) /* ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo */\
+	XLAT_INST_ESAC(0x920c, D5, D5rXYZ, st_no_op) /* ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo */\
 	INST_ESAC(0x920f, D5, push) /* PUSH -- 0x920f -- 1001 001d dddd 1111 */\
 	INST_ESAC(0x9400, D5, com) /* COM -- 0x9400 -- One’s Complement -- 1001 010d dddd 0000 */\
 	INST_ESAC(0x9401, D5, neg) /* NEG -- 0x9401 -- Two’s Complement -- 1001 010d dddd 0001 */\
@@ -880,6 +899,9 @@ typedef void (*avr_inst_pfn)(
 #undef INST_ESAC
 #define INST_ESAC(_opcode, _opmask, _opname, _args...) \
 	_avr_inst_ ## _opcode ## _ ##  _opname,
+#undef XLAT_INST_ESAC
+#define XLAT_INST_ESAC(_opcode, _opmask, _xlat, _opname, _args...) \
+	INST_ESAC(_opcode, _opmask, _opname, _args...)
 
 enum { // this table provides instruction case indices
 	INST_ESAC_NONE = 0, // starting with zero...  bad...  special case.
@@ -889,6 +911,9 @@ enum { // this table provides instruction case indices
 #undef INST_ESAC
 #define INST_ESAC(_opcode, _opmask, _opname, _args...) \
 	INST_OPCODE(_opname) = _opcode,
+#undef XLAT_INST_ESAC
+#define XLAT_INST_ESAC(_opcode, _opmask, _xlat, _opname, _args...) \
+	INST_ESAC(_opcode, _opmask, _opname, _args...)
 
 enum { // this table provides opcode cross references
 	INST_ESAC_TABLE
@@ -1225,11 +1250,10 @@ INLINE_INST_DECL(ld_st, const uint16_t as_opcode)
 	const int op = as_opcode & 3;
 
 	uint8_t vd = 0;
-	get_d5(opcode);
+	get_d5_rXYZ(*extend_opcode);
 	if (!load)
 		vd = avr->data[d];
 
-	uint8_t  rXYZ = ((uint8_t []){R_ZL, 0x00, R_YL, R_XL})[(opcode & 0x000c) >> 2];
 	uint16_t vXYZ = _avr_data_read16le(avr, rXYZ);
 
 	if (load) {
@@ -1722,6 +1746,9 @@ typedef struct avr_inst_decode_elem_t {
 #undef INST_ESAC
 #define INST_ESAC(_opcode, _opmask, _opname, _args...) \
 	{ _opcode, INST_MASK_ ## _opmask, _avr_inst_ ## _opname, #_opname },
+#undef XLAT_INST_ESAC
+#define XLAT_INST_ESAC(_opcode, _opmask, _xlat, _opname, _args...) \
+	INST_ESAC(_opcode, _opmask, _opname, _args...)
 
 INST_DECL(decode_one);
 static avr_inst_decode_elem_t _avr_inst_opcode_table[] =  {
@@ -1747,20 +1774,23 @@ _avr_inst_collision_detected(
 #define IF_OP(_opcode, _opmask) \
 	if ((_opcode) == (opcode & (_opmask)))
 
-#undef INST_ESAC
-#define INST_ESAC(_opcode, _opmask, _opname) \
+#undef XLAT_INST_ESAC
+#define XLAT_INST_ESAC(_opcode, _opmask, _xlat, _opname) \
 	IF_OP(_opcode, INST_MASK_ ## _opmask) { \
 		invalid_opcode = 0; \
 		if (0 == extend_opcode) { \
 			const uint8_t handler = _avr_inst_ ## _opcode ## _ ## _opname; \
 			opcode |= handler << 24; \
-			AVR_INST_OPCODE_XLAT_ ## _opmask(handler); \
+			AVR_INST_OPCODE_XLAT_ ## _xlat(handler); \
 			INST_SUB_CALL(_opname); \
 		} else { \
 			if (0) _avr_inst_collision_detected(avr, opcode, INST_MASK_ ## _opmask, #_opname, extend_opcode); \
 		} \
 	}
 
+#undef INST_ESAC
+#define INST_ESAC(_opcode, _opmask, _opname) \
+		XLAT_INST_ESAC(_opcode, _opmask, _opmask, _opname)
 /*
  * Main opcode decoder
  * 
