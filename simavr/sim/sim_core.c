@@ -450,10 +450,6 @@ _make_opcode_h8_0r8_1r8_2r8(
 #define get_r5(o) \
 		const uint8_t r = ((o >> 5) & 0x10) | (o & 0xf);
 
-#define get_d5_a6(o) \
-		get_d5(o); \
-		const uint8_t A = ((((o >> 9) & 3) << 4) | ((o) & 0xf)) + 32;
-
 #define get_vd5_s3(o) \
 		get_vd5(o); \
 		const uint8_t s = o & 7;
@@ -549,9 +545,15 @@ INST_OPCODE_XLAT_DECL(D5)
 	return *extend_opcode = opcode;
 }
 
+#define get_d5_a6(_xop) \
+		get_R(_xop, 0, d); \
+		get_R(_xop, 1, A);
+
 INST_OPCODE_XLAT_DECL(D5A6)
 {
-	return *extend_opcode = opcode;
+	get_d5(opcode);
+	const uint8_t A = ((((opcode >> 9) & 3) << 4) | ((opcode) & 0xf)) + 32;
+	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, A, 0);
 }
 
 INST_OPCODE_XLAT_DECL(D5B3)
