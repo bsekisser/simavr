@@ -480,17 +480,6 @@ _make_opcode_h8_0r8_1r8_2r8(
 		get_h4_k8(o) \
 		const uint8_t vh = avr->data[h];
 
-#define get_io5(o) \
-		const uint8_t io = ((o >> 3) & 0x1f) + 32;
-
-#define get_io5_b3(o) \
-		get_io5(o); \
-		const uint8_t b = o & 0x7;
-
-#define get_io5_b3mask(o) \
-		get_io5(o); \
-		const uint8_t mask = 1 << (o & 0x7);
-
 //	const int16_t o = ((int16_t)(op << 4)) >> 3; // CLANG BUG!
 #define get_o12(op) \
 		const int16_t o = ((int16_t)((op << 4) & 0xffff)) >> 3;
@@ -515,8 +504,26 @@ _make_opcode_h8_0r8_1r8_2r8(
 #define AVR_INST_OPCODE_XLAT_ABS22(_handler) \
 		extend_opcode = opcode
 
+#define get_io5_b3_mask(_xop) \
+		get_R(_xop, 0, io); \
+		get_R(_xop, 1, b); \
+		get_R(_xop, 2, mask); \
+
+static void
+_avr_inst_opcode_xlat_io5b3(
+	avr_t * avr, 
+	uint32_t opcode, 
+	uint32_t * extend_opcode, 
+	uint8_t handler)
+{
+	const uint8_t io = ((opcode >> 3) & 0x1f) + 32;
+	const uint8_t b = opcode & 0x7;
+	const uint8_t mask = 1 << (opcode & 0x7);
+	*extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, io, b, mask);
+}
+
 #define AVR_INST_OPCODE_XLAT_A5B3(_handler) \
-		extend_opcode = opcode
+		_avr_inst_opcode_xlat_io5b3(avr, opcode, &extend_opcode, _handler)
 
 #define AVR_INST_OPCODE_XLAT_D5(_handler) \
 		extend_opcode = opcode
@@ -1182,7 +1189,7 @@ INLINE_INST_DECL(cbi_sbi, const uint16_t as_opcode)
 {
 	const int set = as_opcode & 0x0200;
 
-	get_io5_b3mask(opcode);
+	get_io5_b3_mask(opcode);
 	uint8_t res = _avr_get_ram(avr, io);
 	if(set)
 		res |= mask;
@@ -1384,7 +1391,7 @@ INLINE_INST_DECL(skip_io_r_logic, const uint16_t as_opcode, uint8_t rio, uint8_t
 
 INLINE_INST_DECL(sbic_sbis, const uint16_t as_opcode)
 {
-	get_io5_b3mask(opcode);
+	get_io5_b3_mask(opcode);
 	uint8_t vio = _avr_get_ram(avr, io);
 	char *opname_array[2] = { "sbic", "sbis" };
 	INST_SUB_CALL(skip_io_r_logic, as_opcode, io, vio, mask, opname_array);
