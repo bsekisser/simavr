@@ -458,10 +458,6 @@ _make_opcode_h8_0r8_1r8_2r8(
 		get_vd5_s3(o); \
 		const uint8_t mask = 1 << s;
 
-//	const int16_t o = ((int16_t)(op << 4)) >> 3; // CLANG BUG!
-#define get_o12(op) \
-		const int16_t o = ((int16_t)((op << 4) & 0xffff)) >> 3;
-
 #define get_sreg_bit(o) \
 		const uint8_t b = (o >> 4) & 7;
 
@@ -641,8 +637,25 @@ _avr_inst_opcode_xlat_h4k8(
 #define AVR_INST_OPCODE_XLAT_O7S3(_handler) \
 		extend_opcode = opcode
 
+#define get_o12(_xop) \
+	const avr_flashaddr_t ea = _xop & ((1 << 24) - 1);
+
+static void 
+_avr_inst_opcode_xlat_o12(
+	avr_t * avr, 
+	uint32_t opcode, 
+	uint32_t * extend_opcode, 
+	uint8_t handler, 
+	avr_flashaddr_t * new_pc)
+{
+//	const int16_t o = ((int16_t)(opcode << 4)) >> 3; // CLANG BUG!
+	const int16_t o = ((int16_t)((opcode << 4) & 0xffff)) >> 3;
+	const avr_flashaddr_t ea = *new_pc + o;
+	*extend_opcode = (handler << 24) | (ea & ((1 << 24) - 1));
+}
+
 #define AVR_INST_OPCODE_XLAT_O12(_handler) \
-		extend_opcode = opcode
+		_avr_inst_opcode_xlat_o12(avr, opcode, &extend_opcode, _handler, new_pc);
 
 #define get_vp2_k6(_xop) \
 		get_RvR16le(_xop, 0, p); \
@@ -1213,14 +1226,15 @@ INLINE_INST_DECL(call_jmp_long, const uint16_t as_opcode)
 INLINE_INST_DECL(call_jmp_r, const uint16_t as_opcode)
 {
 	const int call = as_opcode & 0x1000;
-
+	int16_t o = 0;
 	get_o12(opcode);
-	STATE("r%s .%d [%04x]\n", call ? "call" : "jmp", o >> 1, *new_pc + o);
+	T(o = ea - *new_pc);
+	STATE("r%s .%d [%04x]\n", call ? "call" : "jmp", o >> 1, ea);
 	if(call)
 		*cycle += _avr_push_addr(avr, *new_pc);
 	else
 		(*cycle)++;
-	*new_pc = *new_pc + o;
+	*new_pc = ea;
 	if (!call || (o != 0)) {
 		TRACE_JUMP();
 	}
