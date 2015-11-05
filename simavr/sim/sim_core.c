@@ -457,16 +457,6 @@ _make_opcode_h8_0r8_1r8_2r8(
 #define get_vd5_s3_mask(o) \
 		get_vd5_s3(o); \
 		const uint8_t mask = 1 << s;
-
-#define get_vd5_vr5(o) \
-		get_r5(o); \
-		get_d5(o); \
-		const uint8_t vd = avr->data[d], vr = avr->data[r];
-
-#define get_d5_vr5(o) \
-		get_d5(o); \
-		get_r5(o); \
-		const uint8_t vr = avr->data[r];
 		
 #define get_h4_k8(o) \
 		const uint8_t h = 16 + ((o >> 4) & 0xf); \
@@ -552,14 +542,28 @@ _avr_inst_opcode_xlat_d5a6(
 #define AVR_INST_OPCODE_XLAT_D4R4(_handler) \
 		extend_opcode = opcode
 
+#define get_d5_vr5(_xop) \
+		get_R(_xop, 0, d); \
+		get_RvR(_xop, 1, r); \
+
+#define get_vd5_vr5(_xop) \
+		get_RvR(_xop, 0, d); \
+		get_RvR(_xop, 1, r); \
+
+static void
+_avr_inst_opcode_xlat_d5r5(
+	avr_t * avr, 
+	uint32_t opcode, 
+	uint32_t * extend_opcode, 
+	uint8_t handler)
+{
+	get_d5(opcode);
+	get_r5(opcode);
+	*extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, r, 0);
+}
+
 #define AVR_INST_OPCODE_XLAT_D5R5(_handler) \
-		extend_opcode = opcode
-
-#define AVR_INST_OPCODE_XLAT_D5rXYZ(_handler) \
-		extend_opcode = opcode
-
-#define AVR_INST_OPCODE_XLAT_D5rYZ_Q6(_handler) \
-		extend_opcode = opcode
+		_avr_inst_opcode_xlat_d5r5(avr, opcode, &extend_opcode, _handler)
 
 #define get_d5_rXYZ(_xop) \
 		get_R(_xop, 0, d); \
