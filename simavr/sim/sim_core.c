@@ -479,8 +479,25 @@ _make_opcode_h8_0r8_1r8_2r8(
 #define AVR_INST_OPCODE_XLAT_ALL(_handler) \
 		extend_opcode = opcode
 
+#define get_abs22(_xop) \
+	const avr_flashaddr_t a = _xop & ((1 << 24) - 1);
+
+static uint32_t
+_avr_inst_opcode_xlat_abs22(
+	avr_t * avr, 
+	uint32_t opcode, 
+	uint32_t * extend_opcode, 
+	uint8_t handler,
+	avr_flashaddr_t * new_pc)
+{
+	const uint16_t a = ((opcode & 0x01f0) >> 3) | (opcode & 1);
+	const uint16_t x = _avr_flash_read16le(avr, *new_pc);
+	const avr_flashaddr_t ea = ((a << 16) | x) << 1;
+	*extend_opcode = (handler << 24) | ea;
+}
+
 #define AVR_INST_OPCODE_XLAT_ABS22(_handler) \
-		extend_opcode = opcode
+		_avr_inst_opcode_xlat_abs22(avr, opcode, &extend_opcode, _handler, new_pc);
 
 #define get_io5_b3_mask(_xop) \
 		get_R(_xop, 0, io); \
@@ -1182,15 +1199,13 @@ INLINE_INST_DECL(call_jmp_long, const uint16_t as_opcode)
 {
 	const int call = as_opcode & 2;
 
-	avr_flashaddr_t a = ((opcode & 0x01f0) >> 3) | (opcode & 1);
-	uint16_t x = _avr_flash_read16le(avr, *new_pc);
-	a = (a << 16) | x;
-	STATE("%s 0x%06x\n", call ? "call" : "jmp", a);
+	get_abs22(opcode);
+	STATE("%s 0x%06x\n", call ? "call" : "jmp", a >> 1);
 	if (call)
 		*cycle += 1 + _avr_push_addr(avr, *new_pc + 2);
 	else
 		*cycle += 2;
-	*new_pc = a << 1;
+	*new_pc = a;
 	TRACE_JUMP();
 	STACK_FRAME_PUSH();
 }
