@@ -800,14 +800,12 @@ enum {
 };
 
 enum {
-	INST_FLAG_BIT_NONE = 0,
-	INST_FLAG_BIT_CARRY,
+	INST_FLAG_BIT_CARRY = 0,
 	INST_FLAG_BIT_SAVE_RESULT,
 };
 	
 #define INST_FLAG_NONE 0
-#define INST_FLAG_CARRY (1 << INST_FLAG_BIT_CARRY)
-#define INST_FLAG_SAVE_RESULT (1 << INST_FLAG_BIT_SAVE_RESULT)
+#define INST_FLAG(_flag) (1 << INST_FLAG_BIT_ ## _flag)
 
 /*
  * begin common code handlers
@@ -844,8 +842,8 @@ INLINE_INST_DECL(adiw_sbiw, const uint16_t as_opcode)
 
 INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags, uint8_t r0, uint8_t vr0, uint8_t r1, uint8_t vr1)
 {
-	const int carry = 0 != (flags & INST_FLAG_CARRY);
-	const int save_result = 0 != (flags & INST_FLAG_SAVE_RESULT);
+	const int carry = 0 != (flags & INST_FLAG(CARRY));
+	const int save_result = 0 != (flags & INST_FLAG(SAVE_RESULT));
 
 	uint8_t res = vr0;
 	
@@ -1298,13 +1296,13 @@ INLINE_INST_DECL(h4k8_common_helper, const uint8_t operation, const uint8_t flag
  * inlining here may not be as important.
  */
 
-INST_SUB_CALL_DECL(add, d5r5_common_helper, INST_OP_ADD, INST_FLAG_SAVE_RESULT)
-INST_SUB_CALL_DECL(addc, d5r5_common_helper, INST_OP_ADD, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT)
+INST_SUB_CALL_DECL(add, d5r5_common_helper, INST_OP_ADD, INST_FLAG(SAVE_RESULT))
+INST_SUB_CALL_DECL(addc, d5r5_common_helper, INST_OP_ADD, INST_FLAG(CARRY) | INST_FLAG(SAVE_RESULT))
 
 INST_AS_OPCODE_SUB_CALL_DECL(adiw, adiw_sbiw)
 
-INST_SUB_CALL_DECL(and, d5r5_common_helper, INST_OP_AND, INST_FLAG_SAVE_RESULT)
-INST_SUB_CALL_DECL(andi, h4k8_common_helper, INST_OP_AND, INST_FLAG_SAVE_RESULT)
+INST_SUB_CALL_DECL(and, d5r5_common_helper, INST_OP_AND, INST_FLAG(SAVE_RESULT))
+INST_SUB_CALL_DECL(andi, h4k8_common_helper, INST_OP_AND, INST_FLAG(SAVE_RESULT))
 
 INST_DECL(asr)
 {
@@ -1352,7 +1350,7 @@ INST_DECL(com)
 }
 
 INST_SUB_CALL_DECL(cp, d5r5_common_helper, INST_OP_SUB, INST_OP_NONE)
-INST_SUB_CALL_DECL(cpc, d5r5_common_helper, INST_OP_SUB, INST_FLAG_CARRY)
+INST_SUB_CALL_DECL(cpc, d5r5_common_helper, INST_OP_SUB, INST_FLAG(CARRY))
 INST_SUB_CALL_DECL(cpi, h4k8_common_helper, INST_OP_SUB, INST_OP_NONE)
 
 INST_DECL(cpse)
@@ -1380,7 +1378,7 @@ INST_AS_OPCODE_SUB_CALL_DECL(eijmp, call_jmp_ei)
 INST_AS_OPCODE_SUB_CALL_DECL(elpm_z, elpm_lpm)
 INST_AS_OPCODE_SUB_CALL_DECL(elpm_z_post_inc, elpm_lpm)
 
-INST_SUB_CALL_DECL(eor, d5r5_common_helper, INST_OP_EOR, INST_FLAG_SAVE_RESULT)
+INST_SUB_CALL_DECL(eor, d5r5_common_helper, INST_OP_EOR, INST_FLAG(SAVE_RESULT))
 
 INST_AS_OPCODE_SUB_CALL_DECL(fmul, mul_complex)
 INST_AS_OPCODE_SUB_CALL_DECL(fmuls, mul_complex)
@@ -1498,8 +1496,8 @@ INST_DECL(nop)
 	STATE("nop\n");
 }
 
-INST_SUB_CALL_DECL(or, d5r5_common_helper, INST_OP_OR, INST_FLAG_SAVE_RESULT)
-INST_SUB_CALL_DECL(ori, h4k8_common_helper, INST_OP_OR, INST_FLAG_SAVE_RESULT)
+INST_SUB_CALL_DECL(or, d5r5_common_helper, INST_OP_OR, INST_FLAG(SAVE_RESULT))
+INST_SUB_CALL_DECL(ori, h4k8_common_helper, INST_OP_OR, INST_FLAG(SAVE_RESULT))
 
 INST_DECL(pop)
 {
@@ -1552,8 +1550,8 @@ INST_DECL(ror)
 	SREG();
 }
 
-INST_SUB_CALL_DECL(sbc, d5r5_common_helper, INST_OP_SUB, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT)
-INST_SUB_CALL_DECL(sbci, h4k8_common_helper, INST_OP_SUB, INST_FLAG_CARRY | INST_FLAG_SAVE_RESULT)
+INST_SUB_CALL_DECL(sbc, d5r5_common_helper, INST_OP_SUB, INST_FLAG(CARRY) | INST_FLAG(SAVE_RESULT))
+INST_SUB_CALL_DECL(sbci, h4k8_common_helper, INST_OP_SUB, INST_FLAG(CARRY) | INST_FLAG(SAVE_RESULT))
 
 INST_AS_OPCODE_SUB_CALL_DECL(sbi, cbi_sbi)
 
@@ -1569,8 +1567,8 @@ INST_AS_OPCODE_SUB_CALL_DECL(std, ldd_std)
 
 INST_AS_OPCODE_SUB_CALL_DECL(sts, lds_sts)
 
-INST_SUB_CALL_DECL(sub, d5r5_common_helper, INST_OP_SUB, INST_FLAG_SAVE_RESULT)
-INST_SUB_CALL_DECL(subi, h4k8_common_helper, INST_OP_SUB, INST_FLAG_SAVE_RESULT)
+INST_SUB_CALL_DECL(sub, d5r5_common_helper, INST_OP_SUB, INST_FLAG(SAVE_RESULT))
+INST_SUB_CALL_DECL(subi, h4k8_common_helper, INST_OP_SUB, INST_FLAG(SAVE_RESULT))
 
 INST_DECL(sleep)
 {
