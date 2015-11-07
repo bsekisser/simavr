@@ -547,12 +547,16 @@ INST_OPCODE_XLAT_DECL(D5B3)
 
 INST_OPCODE_XLAT_DECL(D3R3)
 {
-	return *extend_opcode = opcode;
+	const uint8_t d = 16 + ((opcode >> 4) & 0x7);
+	const uint8_t r = 16 + (opcode & 0x7);
+	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, r, 0);
 }
 
 INST_OPCODE_XLAT_DECL(D4R4)
 {
-	return *extend_opcode = opcode;
+	const uint8_t d = (opcode >> 3) & 0x1e; /* ((opcode >> 4) & 0x0f) << 1; */
+	const uint8_t r = (opcode & 0xf) << 1;
+	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, r, 0);
 }
 
 #define get_d5_vr5(_xop) \
@@ -567,6 +571,13 @@ INST_OPCODE_XLAT_DECL(D5R5)
 {
 	get_d5(opcode);
 	get_r5(opcode);
+	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, r, 0);
+}
+
+INST_OPCODE_XLAT_DECL(D16R16)
+{
+	const uint8_t d = 16 + ((opcode >> 4) & 0xf);
+	const uint8_t r = 16 + (opcode & 0xf);
 	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, r, 0);
 }
 
@@ -839,6 +850,7 @@ typedef void (*avr_inst_pfn)(
 #define INST_MASK_D5rXYZ	0xfe03
 #define INST_MASK_D5rYZ_Q6	0xd200
 #define INST_MASK_D5R5		0xfc00
+#define INST_MASK_D16R16	0xff00
 #define INST_MASK_H4K8		0xf000
 #define INST_MASK_O7S3		0xfc00
 #define INST_MASK_O12		0xf000
@@ -848,7 +860,7 @@ typedef void (*avr_inst_pfn)(
 #define INST_ESAC_TABLE /* primary list of avr instruction translation handlers */\
 	INST_ESAC(0x0000, ALL, nop) /* NOP */\
 	INST_ESAC(0x0100, D4R4, movw) /* MOVW -- 0x0100 -- Copy Register Word -- 0000 0001 dddd rrrr */\
-	INST_ESAC(0x0200, D4R4, muls) /* MULS -- 0x0200 -- Multiply Signed -- 0000 0010 dddd rrrr */\
+	INST_ESAC(0x0200, D16R16, muls) /* MULS -- 0x0200 -- Multiply Signed -- 0000 0010 dddd rrrr */\
 	INST_ESAC(0x0300, D3R3, mulsu) /* MULSU -- 0x0300 -- Multiply Signed Unsigned -- 0000 0011 0ddd 0rrr */\
 	INST_ESAC(0x0308, D3R3, fmul) /* FMUL -- 0x0308 -- Fractional Multiply Unsigned -- 0000 0011 0ddd 1rrr */\
 	INST_ESAC(0x0380, D3R3, fmuls) /* FMULS -- 0x0380 -- Multiply Signed -- 0000 0011 1ddd 0rrr */\
@@ -1376,8 +1388,8 @@ INLINE_INST_DECL(lds_sts, const uint16_t as_opcode)
 
 INLINE_INST_DECL(mul_complex, const uint16_t as_opcode)
 {
-	int8_t r = 16 + (opcode & 0x7);
-	int8_t d = 16 + ((opcode >> 4) & 0x7);
+	get_R(opcode, 0, d);
+	get_R(opcode, 1, r);
 	int16_t res = 0;
 	uint8_t c = 0;
 	T(const char * name = "";)
@@ -1625,9 +1637,8 @@ INST_DECL(mov)
 
 INST_DECL(movw)
 {
-	uint8_t d = (opcode >> 3) & 0x1e; /* ((opcode >> 4) & 0x0f) << 1; */
-	uint8_t r = (opcode & 0xf) << 1;
-	uint16_t vr = _avr_data_read16le(avr, r);
+	get_R(opcode, 0, d);
+	get_RvR16le(opcode, 1, r);
 	STATE("movw %s:%s, %s:%s[%04x]\n", avr_regname(d), avr_regname(d+1), avr_regname(r), avr_regname(r+1), vr);
 	_avr_set_r16le(avr, d, vr);
 }
@@ -1646,8 +1657,8 @@ INST_DECL(mul)
 
 INST_DECL(muls)
 {
-	int8_t r = 16 + (opcode & 0xf);
-	int8_t d = 16 + ((opcode >> 4) & 0xf);
+	get_R(opcode, 0, d);
+	get_R(opcode, 1, r);
 	int16_t res = ((int8_t)avr->data[r]) * ((int8_t)avr->data[d]);
 	STATE("muls %s[%d], %s[%02x] = %d\n", avr_regname(d), ((int8_t)avr->data[d]), avr_regname(r), ((int8_t)avr->data[r]), res);
 	_avr_set_r16le(avr, 0, res);
