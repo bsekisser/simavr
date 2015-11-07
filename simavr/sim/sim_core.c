@@ -1113,6 +1113,21 @@ INLINE_INST_DECL(in_out, const uint16_t as_opcode)
 		_avr_set_r(avr, d, _avr_get_ram(avr, A));
 }
 
+/*
+ * Load store instructions
+ *
+ * 1001 00sr rrrr iioo
+ * s = 0 = load, 1 = store
+ * ii = 16 bits register index, 11 = X, 10 = Y, 00 = Z
+ * oo = 1) post increment, 2) pre-decrement
+ *
+ * Addendum notes:
+ *	ii == 00,  oo == 00 lds/sts
+ *		s == 0 --> lds, s == 1 --> sts
+ *	ii == 01 (e)lpm
+ *	ii == 11, oo == 11 pop/push
+ *		s == 0 --> pop, s == 1 --> push
+ */
 INLINE_INST_DECL(ld_st, const uint16_t as_opcode)
 {
 	const int load = !(as_opcode & 0x0200);
@@ -1149,6 +1164,14 @@ INLINE_INST_DECL(ld_st, const uint16_t as_opcode)
 		_avr_set_r(avr, d, vd);
 }
 
+/*
+ * Load (LDD/STD) store instructions
+ *
+ * 10q0 qqsd dddd yqqq
+ * s = 0 = load, 1 = store
+ * y = 16 bits register index, 1 = Y, 0 = X
+ * q = 6 bit displacement
+ */
 INLINE_INST_DECL(ldd_std, const uint16_t as_opcode)
 {
 	const int load = !(as_opcode & 0x0200);
@@ -1657,19 +1680,14 @@ _avr_inst_collision_detected(
 /*
  * Main opcode decoder
  * 
- * The decoder was written by following the datasheet in no particular order.
- * As I went along, I noticed "bit patterns" that could be used to factor opcodes
- * However, a lot of these only became apparent later on, so SOME instructions
- * (skip of bit set etc) are compact, and some could use some refactoring (the ALU
- * ones scream to be factored).
- * I assume that the decoder could easily be 2/3 of it's current size.
+ * The original decoder was written by following the datasheet in no particular order.
+ * It has since been modified and rewritten.
  * 
- * + It lacks the "extended" XMega jumps. 
- * + It also doesn't check whether the core it's
- *   emulating is supposed to have the fancy instructions, like multiply and such.
+ * + It doesn't check whether the core it's emulating is supposed to have the 
+ *	fancy instructions, like multiply and such.
+ * + Folding when implimented and if used, cycle accounting is to remain accurate but
+ *	instructions will complete before interrupts or timers are handled.
  * 
- * The number of cycles taken by instruction has been added, but might not be
- * entirely accurate.
  */
  
 INST_DECL(decode_one)
