@@ -489,10 +489,10 @@ typedef uint32_t (*avr_inst_opcode_xlat_pfn)(
 	uint32_t opcode, 
 	uint32_t * extend_opcode, 
 	uint8_t handler,
-	avr_flashaddr_t new_pc);
+	avr_flashaddr_t next_pc);
 
 #define INST_OPCODE_XLAT_PFN_CALL(_pfn) \
-	_pfn(avr, opcode, &extend_opcode, handler, *new_pc);
+	_pfn(avr, opcode, &extend_opcode, handler, next_pc);
 
 #define INST_OPCODE_XLAT_DECL(_xlat) \
 	static uint32_t \
@@ -501,7 +501,7 @@ typedef uint32_t (*avr_inst_opcode_xlat_pfn)(
 		uint32_t opcode, \
 		uint32_t * extend_opcode, \
 		uint8_t handler, \
-		avr_flashaddr_t new_pc)
+		avr_flashaddr_t next_pc)
 
 INST_OPCODE_XLAT_DECL(ALL)
 {
@@ -514,7 +514,7 @@ INST_OPCODE_XLAT_DECL(ALL)
 INST_OPCODE_XLAT_DECL(ABS22)
 {
 	const uint16_t a = ((opcode & 0x01f0) >> 3) | (opcode & 1);
-	const uint16_t x = _avr_flash_read16le(avr, new_pc);
+	const uint16_t x = _avr_flash_read16le(avr, next_pc);
 	const avr_flashaddr_t ea = ((a << 16) | x) << 1;
 	return *extend_opcode = (handler << 24) | ea;
 }
@@ -624,7 +624,7 @@ INST_OPCODE_XLAT_DECL(D5rYZ_Q6)
 INST_OPCODE_XLAT_DECL(D5X16)
 {
 	get_d5(opcode);
-	const uint16_t x = _avr_flash_read16le(avr, new_pc);
+	const uint16_t x = _avr_flash_read16le(avr, next_pc);
 	return *extend_opcode = _make_opcode_h8_0r8_1r16(handler, d, x);
 }
 
@@ -649,14 +649,13 @@ INST_OPCODE_XLAT_DECL(O7S3)
 }
 
 #define get_o12(_xop) \
-	const avr_flashaddr_t ea = _xop & ((1 << 24) - 1);
+	const int16_t o = _xop & 0xffff;
 
 INST_OPCODE_XLAT_DECL(O12)
 {
 //	const int16_t o = ((int16_t)(opcode << 4)) >> 3; // CLANG BUG!
 	const int16_t o = ((int16_t)((opcode << 4) & 0xffff)) >> 3;
-	const avr_flashaddr_t ea = new_pc + o;
-	return *extend_opcode = (handler << 24) | (ea & ((1 << 24) - 1));
+	return *extend_opcode = (handler << 24) | (o & 0xffff);
 }
 
 #define get_vp2_k6(_xop) \
@@ -820,29 +819,19 @@ static inline int _avr_is_instruction_32_bits(avr_t * avr, avr_flashaddr_t pc)
 
 typedef void (*avr_inst_pfn)(
 	avr_t * avr,
-	uint32_t opcode,
-	uint16_t * cycle,
-	avr_flashaddr_t * new_pc);
+	uint32_t opcode);
 
 #define INST_PFN_CALL(_pfn) \
-	_pfn(avr, opcode, &cycle, &new_pc);
-
-#define INST_PFN_SUB_CALL(_pfn) \
-	_pfn(avr, opcode, cycle, new_pc);
-
-#define INST_SUB_CALL(_opname, _args...) \
-	_avr_inst_ ## _opname(avr, opcode, cycle, new_pc, ## _args)
+	_pfn(avr, opcode);
 
 #define INST_CALL(_opname, _args...) \
-	_avr_inst_ ## _opname(avr, opcode, &cycle, &new_pc, ## _args)
+	_avr_inst_ ## _opname(avr, opcode, ## _args)
 
 #define INST_DECL(_opname, _args...) \
 	static void \
 		_avr_inst_ ## _opname( \
 			avr_t * avr, \
 			uint32_t opcode, \
-			uint16_t * cycle, \
-			avr_flashaddr_t * new_pc, \
 			## _args)
 
 #define INLINE_INST inline
@@ -851,9 +840,9 @@ typedef void (*avr_inst_pfn)(
 	INLINE_INST INST_DECL(_opname, ## _args)
 
 #define INST_SUB_CALL_DECL(_opname, _subcall_opname, _args...) \
-	INST_DECL(_opname) \
+	INST_DECL(_opname) /* TODO: tail call */\
 	{ \
-		INST_SUB_CALL(_subcall_opname, ## _args); \
+		INST_CALL(_subcall_opname, ## _args); \
 	}
 
 #define INST_OPCODE(_opname) \
@@ -967,7 +956,7 @@ typedef void (*avr_inst_pfn)(
 	_avr_inst_ ## _opcode ## _ ##  _opname,
 #undef XLAT_INST_ESAC
 #define XLAT_INST_ESAC(_opcode, _opmask, _xlat, _opname, _args...) \
-	INST_ESAC(_opcode, _opmask, _opname, _args...)
+	INST_ESAC(_opcode, _opmask, _opname, ## _args)
 
 enum { // this table provides instruction case indices
 	INST_ESAC_NONE = 0, // starting with zero...  bad...  special case.
@@ -980,7 +969,7 @@ enum { // this table provides instruction case indices
 	INST_OPCODE(_opname) = _opcode,
 #undef XLAT_INST_ESAC
 #define XLAT_INST_ESAC(_opcode, _opmask, _xlat, _opname, _args...) \
-	INST_ESAC(_opcode, _opmask, _opname, _args...)
+	INST_ESAC(_opcode, _opmask, _opname, ## _args)
 
 enum { // this table provides opcode cross references
 	INST_ESAC_TABLE
@@ -1002,6 +991,57 @@ enum {
 	
 #define INST_FLAG_NONE 0
 #define INST_FLAG(_flag) (1 << INST_FLAG_BIT_ ## _flag)
+
+/*
+ * PC and Cycle accounting notation explained...
+ *
+ * NEXT_DELTA_PC_CYCLES(
+ *	(_base_pc_delta_bytes + additional_pc_delta_bytes + ect...), 
+ *	(_base_cycles + additional_cycles + etc...));
+ *
+ * NOTE... THIS SHOULD BE THE LAST FUNCTION EXECUTED TO FINALIZE THE INSTRUCTION
+ *
+ * TODO: tail call style return and next instruction fall through.
+ *
+ */
+
+static inline void 
+_avr_inst_cycles(
+	avr_t * avr,
+	uint16_t cycles)
+{
+	avr->cycle += cycles;
+	if (avr->run_cycle_count > cycles)
+		avr->run_cycle_count -= cycles;
+	else
+		avr->run_cycle_count = 0;
+}
+
+static inline void 
+_avr_inst_next_delta_pc_cycles(
+	avr_t * avr,
+	int32_t delta_pc,
+	uint16_t cycles)
+{
+	avr->pc += delta_pc;
+	_avr_inst_cycles(avr, cycles);
+}
+
+static inline void 
+_avr_inst_next_new_pc_cycles(
+	avr_t * avr,
+	avr_flashaddr_t new_pc,
+	uint16_t cycles)
+{
+	avr->pc = new_pc;
+	_avr_inst_cycles(avr, cycles);
+}
+
+#define NEXT_DELTA_PC_CYCLES(_delta_pc, _cycles) \
+	_avr_inst_next_delta_pc_cycles(avr, (_delta_pc), (_cycles))
+
+#define NEXT_NEW_PC_CYCLES(_new_pc, _cycles) \
+	_avr_inst_next_new_pc_cycles(avr, (_new_pc), (_cycles))
 
 /*
  * begin common code handlers
@@ -1032,7 +1072,8 @@ INLINE_INST_DECL(adiw_sbiw, const uint16_t as_opcode)
 	}
 	_avr_flags_zns16(avr, res);
 	SREG();
-	(*cycle)++;
+
+	NEXT_DELTA_PC_CYCLES(2, (1 + 1));
 }
 
 
@@ -1147,6 +1188,8 @@ INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags
 	if (operation) {
 		SREG();
 	}
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INLINE_INST_DECL(bld_bst, const uint16_t as_opcode)
@@ -1165,6 +1208,8 @@ INLINE_INST_DECL(bld_bst, const uint16_t as_opcode)
 	}
 	
 	SREG();
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INLINE_INST_DECL(brxc_brxs, const uint16_t as_opcode)
@@ -1174,18 +1219,20 @@ INLINE_INST_DECL(brxc_brxs, const uint16_t as_opcode)
 	int16_t o = ((int16_t)(opcode << 6)) >> 9; // offset
 	uint8_t s = opcode & 7;
 	int branch = (avr->sreg[s] && set) || (!avr->sreg[s] && !set);
+	avr_flashaddr_t branch_pc = (avr->pc + 2) + (o << 1);
 	const char *names[2][8] = {
 			{ "brcc", "brne", "brpl", "brvc", NULL, "brhc", "brtc", "brid"},
 			{ "brcs", "breq", "brmi", "brvs", NULL, "brhs", "brts", "brie"},
 	};
 	if (names[set][s]) {
-		STATE("%s .%d [%04x]\t; Will%s branch\n", names[set][s], o, *new_pc + (o << 1), branch ? "":" not");
+		STATE("%s .%d [%04x]\t; Will%s branch\n", names[set][s], o, branch_pc, branch ? "":" not");
 	} else {
-		STATE("%s%c .%d [%04x]\t; Will%s branch\n", set ? "brbs" : "brbc", _sreg_bit_name[s], o, *new_pc + (o << 1), branch ? "":" not");
+		STATE("%s%c .%d [%04x]\t; Will%s branch\n", set ? "brbs" : "brbc", _sreg_bit_name[s], o, branch_pc, branch ? "":" not");
 	}
 	if (branch) {
-		(*cycle)++; // 2 cycles if taken, 1 otherwise
-		*new_pc = *new_pc + (o << 1);
+		NEXT_NEW_PC_CYCLES(branch_pc, (1 + 1)); // 2 cycles if taken, 1 otherwise
+	} else {
+		NEXT_DELTA_PC_CYCLES(2, 1);
 	}
 }
 
@@ -1200,11 +1247,12 @@ INLINE_INST_DECL(call_jmp_ei, const uint16_t as_opcode)
 	if (e)
 		z |= avr->data[avr->eind] << 16;
 	STATE("%si%s Z[%04x]\n", e ? "e" : "", c ? "call" : "jmp", z << 1);
+	uint16_t cycles = 0;
 	if (c)
-		*cycle += _avr_push_addr(avr, *new_pc) - 1;
-	*new_pc = z << 1;
-	(*cycle)++;
+		cycles += _avr_push_addr(avr, avr->pc + 2) - 1;
 	TRACE_JUMP();
+
+	NEXT_NEW_PC_CYCLES(z << 1, (1 + 1) + cycles);
 }
 
 INLINE_INST_DECL(call_jmp_long, const uint16_t as_opcode)
@@ -1213,33 +1261,33 @@ INLINE_INST_DECL(call_jmp_long, const uint16_t as_opcode)
 
 	get_abs22(opcode);
 	STATE("%s 0x%06x\n", call ? "call" : "jmp", a >> 1);
+	uint16_t cycles = 0;
 	if (call)
-		*cycle += 1 + _avr_push_addr(avr, *new_pc + 2);
-	else
-		*cycle += 2;
-	*new_pc = a;
+		cycles += _avr_push_addr(avr, avr->pc + (2 + 2)) - 1;
 	TRACE_JUMP();
 	STACK_FRAME_PUSH();
+
+	NEXT_NEW_PC_CYCLES(a, (1 + 2) + cycles);
 }
 
 INLINE_INST_DECL(call_jmp_r, const uint16_t as_opcode)
 {
 	const int call = as_opcode & 0x1000;
-	int16_t o = 0;
+	const avr_flashaddr_t next_pc = avr->pc + 2;
+
 	get_o12(opcode);
-	T(o = ea - *new_pc);
-	STATE("r%s .%d [%04x]\n", call ? "call" : "jmp", o >> 1, ea);
+	STATE("r%s .%d [%04x]\n", call ? "call" : "jmp", o >> 1, next_pc + o);
+	uint16_t cycles = 0;
 	if(call)
-		*cycle += _avr_push_addr(avr, *new_pc);
-	else
-		(*cycle)++;
-	*new_pc = ea;
+		cycles += _avr_push_addr(avr, next_pc) - 1;
 	if (!call || (o != 0)) {
 		TRACE_JUMP();
 	}
 	if(call) {
 		STACK_FRAME_PUSH();
 	}
+
+	NEXT_DELTA_PC_CYCLES(2 + o, (1 + 1) + cycles);
 }
 
 INLINE_INST_DECL(cbi_sbi, const uint16_t as_opcode)
@@ -1254,7 +1302,8 @@ INLINE_INST_DECL(cbi_sbi, const uint16_t as_opcode)
 		res &= ~mask;
 	STATE("%s %s[%04x], 0x%02x = %02x\n", set ? "sbi" : "cbi", avr_regname(io), avr->data[io], mask, res);
 	_avr_set_ram(avr, io, res);
-	(*cycle)++;
+
+	NEXT_DELTA_PC_CYCLES(2, (1 + 1));
 }
 
 INLINE_INST_DECL(elpm_lpm, const uint16_t as_opcode)
@@ -1293,7 +1342,8 @@ INLINE_INST_DECL(elpm_lpm, const uint16_t as_opcode)
 			
 		_avr_set_r16le_hl(avr, R_ZL, z);
 	}
-	*cycle += 2; // 3 cycles
+
+	NEXT_DELTA_PC_CYCLES(2, (1 + 2)); // 3 cycles
 }
 
 INLINE_INST_DECL(in_out, const uint16_t as_opcode)
@@ -1306,6 +1356,8 @@ INLINE_INST_DECL(in_out, const uint16_t as_opcode)
 		_avr_set_ram(avr, A, avr->data[d]);
 	else
 		_avr_set_r(avr, d, _avr_get_ram(avr, A));
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 /*
@@ -1345,7 +1397,6 @@ INLINE_INST_DECL(ld_st, const uint16_t as_opcode)
 			op == 1 ? "++" : "", avr_regname(d), vd);
 	}
 
-	(*cycle)++; // 2 cycles (1 for tinyavr, except with inc/dec 2)
 	if (op == 2) vXYZ--;
 	if (load)
 		vd = _avr_get_ram(avr, vXYZ);
@@ -1356,6 +1407,8 @@ INLINE_INST_DECL(ld_st, const uint16_t as_opcode)
 		_avr_set_r16le_hl(avr, rXYZ, vXYZ);
 	if (load)
 		_avr_set_r(avr, d, vd);
+
+	NEXT_DELTA_PC_CYCLES(2, (1 + 1)); // 2 cycles (1 for tinyavr, except with inc/dec 2)
 }
 
 /*
@@ -1385,7 +1438,8 @@ INLINE_INST_DECL(ldd_std, const uint16_t as_opcode)
 			avr_regname(d), vd);
 		_avr_set_ram(avr, vYZ + q, vd);
 	}
-	(*cycle)++; // 2 cycles, 3 for tinyavr
+
+	NEXT_DELTA_PC_CYCLES(2, (1 + 1)); // 2 cycles, 3 for tinyavr
 }
 
 INLINE_INST_DECL(lds_sts, const uint16_t as_opcode)
@@ -1393,19 +1447,16 @@ INLINE_INST_DECL(lds_sts, const uint16_t as_opcode)
 	const int load = !(as_opcode & 0x0200);
 
 	get_vd5_x16(opcode);
-	*new_pc += 2;
-	
 	if (load) {
 		STATE("lds %s[%02x], 0x%04x\n", avr_regname(d), vd, x);
 		_avr_set_r(avr, d, _avr_get_ram(avr, x));
 	} else {
 		STATE("sts 0x%04x, %s[%02x]\n", x, avr_regname(d), vd);
 	}
-
-	(*cycle)++; // 2 cycles
-
 	if (!load)
 		_avr_set_ram(avr, x, vd);
+
+	NEXT_DELTA_PC_CYCLES((2 + 2), (1 + 1)); // 2 cycles
 }
 
 INLINE_INST_DECL(mul_complex, const uint16_t as_opcode)
@@ -1440,23 +1491,25 @@ INLINE_INST_DECL(mul_complex, const uint16_t as_opcode)
 			T(name = "fmulsu";)
 			break;
 	}
-	(*cycle)++;
 	STATE("%s %s[%d], %s[%02x] = %d\n", name, avr_regname(d), ((int8_t)avr->data[d]), avr_regname(r), ((int8_t)avr->data[r]), res);
 	_avr_set_r16le(avr, 0, res);
 	avr->sreg[S_C] = c;
 	avr->sreg[S_Z] = res == 0;
 	SREG();
+
+	NEXT_DELTA_PC_CYCLES(2, (1 + 1));
 }
 
 INLINE_INST_DECL(skip_if, uint16_t res)
 {
 	if (res) {
-		if (_avr_is_instruction_32_bits(avr, *new_pc)) {
-			*new_pc += 4; *cycle += 2;
+		if (_avr_is_instruction_32_bits(avr, avr->pc + 2)) {
+			NEXT_DELTA_PC_CYCLES((2 + 4), (1 + 2));
 		} else {
-			*new_pc += 2; (*cycle)++;
+			NEXT_DELTA_PC_CYCLES((2 + 2), (1 + 1));
 		}
-	}
+	} else
+		NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INLINE_INST_DECL(skip_io_r_logic, const uint16_t as_opcode, uint8_t rio, uint8_t vrio, uint8_t mask, char *opname_array[2])
@@ -1465,7 +1518,7 @@ INLINE_INST_DECL(skip_io_r_logic, const uint16_t as_opcode, uint8_t rio, uint8_t
 
 	int branch = ((vrio & mask) && set) || (!(vrio & mask) && !set);
 	STATE("%s %s[%02x], 0x%02x\t; Will%s branch\n", opname_array[set], avr_regname(rio), vrio, mask, branch ? "":" not");
-	INST_SUB_CALL(skip_if, branch);
+	INST_CALL(skip_if, branch);
 }
 
 INLINE_INST_DECL(sbic_sbis, const uint16_t as_opcode)
@@ -1473,14 +1526,14 @@ INLINE_INST_DECL(sbic_sbis, const uint16_t as_opcode)
 	get_io5_b3mask(opcode);
 	uint8_t vio = _avr_get_ram(avr, io);
 	char *opname_array[2] = { "sbic", "sbis" };
-	INST_SUB_CALL(skip_io_r_logic, as_opcode, io, vio, mask, opname_array);
+	INST_CALL(skip_io_r_logic, as_opcode, io, vio, mask, opname_array);
 }
 
 INLINE_INST_DECL(sbrc_sbrs, const uint16_t as_opcode)
 {
 	get_vd5_s3_mask(opcode);
 	char *opname_array[2] = { "sbrc", "sbrs" };
-	INST_SUB_CALL(skip_io_r_logic, as_opcode, d, vd, mask, opname_array);
+	INST_CALL(skip_io_r_logic, as_opcode, d, vd, mask, opname_array);
 }
 
 INLINE_INST_DECL(sreg_cl_se, const uint16_t as_opcode)
@@ -1491,18 +1544,20 @@ INLINE_INST_DECL(sreg_cl_se, const uint16_t as_opcode)
 	STATE("%s%c\n", clr ? "cl" : "se", _sreg_bit_name[b]);
 	avr_sreg_set(avr, b, clr ? 0 : 1);
 	SREG();
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INLINE_INST_DECL(d5r5_common_helper, const uint8_t operation, const uint8_t flags)
 {
 	get_vd5_vr5(opcode);
-	INST_SUB_CALL(alu_common_helper, operation, flags, d, vd, r, vr);
+	INST_CALL(alu_common_helper, operation, flags, d, vd, r, vr);
 }
 
 INLINE_INST_DECL(h4k8_common_helper, const uint8_t operation, const uint8_t flags)
 {
 	get_vh4_k8(opcode);
-	INST_SUB_CALL(alu_common_helper, operation, flags, h, vh, -1, k);
+	INST_CALL(alu_common_helper, operation, flags, h, vh, -1, k);
 }
 
 /*
@@ -1527,6 +1582,8 @@ INST_DECL(asr)
 	_avr_set_r(avr, d, res);
 	_avr_flags_zcnvs(avr, res, vd);
 	SREG();
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INST_AS_OPCODE_SUB_CALL_DECL(bld, bld_bst)
@@ -1544,8 +1601,6 @@ INST_DECL(break)
 		// and we do so until gdb restores the instruction
 		// that was here before
 		avr->state = cpu_StepDone;
-		*new_pc = avr->pc;
-		*cycle = 0;
 	}
 }
 
@@ -1562,6 +1617,8 @@ INST_DECL(com)
 	_avr_flags_znv0s(avr, res);
 	avr->sreg[S_C] = 1;
 	SREG();
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INST_SUB_CALL_DECL(cp, d5r5_common_helper, INST_OP_SUB, INST_OP_NONE)
@@ -1573,7 +1630,7 @@ INST_DECL(cpse)
 	get_vd5_vr5(opcode);
 	uint16_t res = vd == vr;
 	STATE("cpse %s[%02x], %s[%02x]\t; Will%s skip\n", avr_regname(d), vd, avr_regname(r), vr, res ? "":" not");
-	INST_SUB_CALL(skip_if, res);
+	INST_CALL(skip_if, res);
 }
 
 INST_DECL(dec)
@@ -1585,6 +1642,8 @@ INST_DECL(dec)
 	avr->sreg[S_V] = res == 0x7f;
 	_avr_flags_zns(avr, res);
 	SREG();
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INST_AS_OPCODE_SUB_CALL_DECL(eicall, call_jmp_ei)
@@ -1613,6 +1672,8 @@ INST_DECL(inc)
 	avr->sreg[S_V] = res == 0x80;
 	_avr_flags_zns(avr, res);
 	SREG();
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INST_AS_OPCODE_SUB_CALL_DECL(lcall, call_jmp_long)
@@ -1626,6 +1687,8 @@ INLINE_INST_DECL(ldi)
 	get_h4_k8(opcode);
 	STATE("ldi %s, 0x%02x\n", avr_regname(h), k);
 	_avr_set_r(avr, h, k);
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INST_AS_OPCODE_SUB_CALL_DECL(ldd, ldd_std)
@@ -1647,6 +1710,8 @@ INST_DECL(lsr)
 	avr->sreg[S_N] = 0;
 	_avr_flags_zcvs(avr, res, vd);
 	SREG();
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INST_DECL(mov)
@@ -1655,6 +1720,8 @@ INST_DECL(mov)
 	uint8_t res = vr;
 	STATE("mov %s, %s[%02x] = %02x\n", avr_regname(d), avr_regname(r), vr, res);
 	_avr_set_r(avr, d, res);
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INST_DECL(movw)
@@ -1663,6 +1730,8 @@ INST_DECL(movw)
 	get_RvR16le(opcode, 1, r);
 	STATE("movw %s:%s, %s:%s[%04x]\n", avr_regname(d), avr_regname(d+1), avr_regname(r), avr_regname(r+1), vr);
 	_avr_set_r16le(avr, d, vr);
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INST_DECL(mul)
@@ -1670,11 +1739,12 @@ INST_DECL(mul)
 	get_vd5_vr5(opcode);
 	uint16_t res = vd * vr;
 	STATE("mul %s[%02x], %s[%02x] = %04x\n", avr_regname(d), vd, avr_regname(r), vr, res);
-	(*cycle)++;
 	_avr_set_r16le(avr, 0, res);
 	avr->sreg[S_Z] = res == 0;
 	avr->sreg[S_C] = (res >> 15) & 1;
 	SREG();
+
+	NEXT_DELTA_PC_CYCLES(2, (1 + 1));
 }
 
 INST_DECL(muls)
@@ -1686,8 +1756,9 @@ INST_DECL(muls)
 	_avr_set_r16le(avr, 0, res);
 	avr->sreg[S_C] = (res >> 15) & 1;
 	avr->sreg[S_Z] = res == 0;
-	(*cycle)++;
 	SREG();
+
+	NEXT_DELTA_PC_CYCLES(2, (1 + 1));
 }
 
 INST_AS_OPCODE_SUB_CALL_DECL(mulsu, mul_complex)
@@ -1703,11 +1774,14 @@ INST_DECL(neg)
 	avr->sreg[S_C] = res != 0;
 	_avr_flags_zns(avr, res);
 	SREG();
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INST_DECL(nop)
 {
 	STATE("nop\n");
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INST_SUB_CALL_DECL(or, d5r5_common_helper, INST_OP_OR, INST_FLAG(SAVE_RESULT))
@@ -1720,7 +1794,8 @@ INST_DECL(pop)
 	_avr_set_r(avr, d, vsp);
 	T(uint16_t sp = _avr_sp_get(avr);)
 	STATE("pop %s (@%04x)[%02x]\n", avr_regname(d), sp, vsp);
-	(*cycle)++;
+
+	NEXT_DELTA_PC_CYCLES(2, (1 + 1));
 }
 
 INST_DECL(push)
@@ -1729,7 +1804,8 @@ INST_DECL(push)
 	_avr_push8(avr, vd);
 	T(uint16_t sp = _avr_sp_get(avr);)
 	STATE("push %s[%02x] (@%04x)\n", avr_regname(d), vd, sp);
-	(*cycle)++;
+
+	NEXT_DELTA_PC_CYCLES(2, (1 + 1));
 }
 
 INST_AS_OPCODE_SUB_CALL_DECL(out, in_out)
@@ -1738,18 +1814,19 @@ INST_AS_OPCODE_SUB_CALL_DECL(rcall, call_jmp_r)
 
 INST_DECL(ret)
 {
-	*new_pc = _avr_pop_addr(avr);
-	*cycle += 1 + avr->address_size;
+	avr_flashaddr_t new_pc = _avr_pop_addr(avr);
 	STATE("ret%s\n", opcode & 0x10 ? "i" : "");
 	TRACE_JUMP();
 	STACK_FRAME_POP();
+
+	NEXT_NEW_PC_CYCLES(new_pc, 2 + avr->address_size);
 }
 
 INST_DECL(reti)
 {
 	avr_sreg_set(avr, S_I, 1);
 	avr_interrupt_reti(avr);
-	INST_SUB_CALL(ret);
+	INST_CALL(ret);
 }
 
 INST_AS_OPCODE_SUB_CALL_DECL(rjmp, call_jmp_r)
@@ -1762,6 +1839,8 @@ INST_DECL(ror)
 	_avr_set_r(avr, d, res);
 	_avr_flags_zcnvs(avr, res, vd);
 	SREG();
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INST_SUB_CALL_DECL(sbc, d5r5_common_helper, INST_OP_SUB, INST_FLAG(CARRY) | INST_FLAG(SAVE_RESULT))
@@ -1793,12 +1872,16 @@ INST_DECL(sleep)
 	 * details, see the commit message. */
 	if (!avr_has_pending_interrupts(avr) || !avr->sreg[S_I])
 		avr->state = cpu_Sleeping;
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INST_DECL(spm)
 {
 	STATE("spm\n");
 	avr_ioctl(avr, AVR_IOCTL_FLASH_SPM, 0);
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INST_AS_OPCODE_SUB_CALL_DECL(set_sreg, sreg_cl_se)
@@ -1813,12 +1896,16 @@ INST_DECL(swap)
 	uint8_t res = (vd >> 4) | (vd << 4) ;
 	STATE("swap %s[%02x] = %02x\n", avr_regname(d), vd, res);
 	_avr_set_r(avr, d, res);
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 INST_DECL(wdr)
 {
 	STATE("wdr\n");
 	avr_ioctl(avr, AVR_IOCTL_WATCHDOG_RESET, 0);
+
+	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
 typedef struct avr_inst_decode_elem_t {
@@ -1835,7 +1922,7 @@ typedef struct avr_inst_decode_elem_t {
 
 #undef INST_ESAC
 #define INST_ESAC(_opcode, _opmask, _opname, _args...) \
-	XLAT_INST_ESAC(_opcode, _opmask, _opmask, _opname, _args...)
+	XLAT_INST_ESAC(_opcode, _opmask, _opmask, _opname, ## _args)
 
 INST_DECL(decode_one);
 static avr_inst_decode_elem_t _avr_inst_opcode_table[] =  {
@@ -1881,7 +1968,10 @@ INST_DECL(decode_one)
 	int invalid_opcode = 1;
 	uint32_t extend_opcode = 0;
 
-	opcode = _avr_flash_read16le(avr, avr->pc);
+	avr_flashaddr_t inst_pc = avr->pc;
+	avr_flashaddr_t next_pc = inst_pc + 2;
+	
+	opcode = _avr_flash_read16le(avr, inst_pc);
 
 	avr_inst_decode_elem_p table_elem = &_avr_inst_opcode_table[1];
 	for(uint8_t handler = 1; handler < INST_ESAC_TABLE_COUNT; handler++) {
@@ -1890,18 +1980,20 @@ INST_DECL(decode_one)
 				invalid_opcode = 0;
 				opcode |= (handler << 24);
 				opcode = INST_OPCODE_XLAT_PFN_CALL(table_elem->xlat_pfn);
-				INST_PFN_SUB_CALL(table_elem->inst_pfn);
+				INST_PFN_CALL(table_elem->inst_pfn);
 			}
 		} else
 			if (0) _avr_inst_collision_detected(avr, opcode, table_elem, extend_opcode);
 		table_elem++;
 	}
 
+	if (0) printf("%s: pc=%06x --> %06x, extend_opcode=%08x\n", __FUNCTION__, inst_pc, avr->pc, extend_opcode);
+
 	if (invalid_opcode)
 		_avr_invalid_opcode(avr);
 
 	if (extend_opcode)
-		_avr_extend_flash_write32le(avr, avr->pc, extend_opcode);
+		_avr_extend_flash_write32le(avr, inst_pc, extend_opcode);
 	else
 		printf("%s: %06x, %04x, %08x >> not translated.\n", 
 			__FUNCTION__, avr->pc, opcode, extend_opcode);
@@ -1931,24 +2023,18 @@ run_one_again:
 		return 0;
 	}
 
-	uint32_t		opcode = _avr_extend_flash_read32le(avr, avr->pc);
-	avr_flashaddr_t		new_pc = avr->pc + 2;	// future "default" pc
-	uint16_t		cycle = 1;
+	uint32_t opcode = _avr_extend_flash_read32le(avr, avr->pc);
 
+	if (0) printf("%s: pc=%06x, opcode=%08x\n", __FUNCTION__, avr->pc, opcode);
+	
 	INST_PFN_CALL(_avr_inst_opcode_table[opcode >> 24].inst_pfn);
 
-	avr->cycle += cycle;
-
 	if ((avr->state == cpu_Running) && 
-		(avr->run_cycle_count > cycle) && 
-		(avr->interrupt_state == 0))
-	{
-		avr->run_cycle_count -= cycle;
-		avr->pc = new_pc;
+		(avr->run_cycle_count > 0) && 
+			(avr->interrupt_state == 0))
 		goto run_one_again;
-	}
 	
-	return new_pc;
+	return avr->pc;
 }
 
 
