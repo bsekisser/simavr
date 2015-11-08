@@ -423,6 +423,9 @@ void avr_dump_state(avr_t * avr)
 }
 #endif
 
+#define LSHIFT_OR(_value_out, _shift, _value_or) \
+	_value_out = ((_value_out) << (_shift)) | (_value_or)
+
 static inline uint32_t
 _make_opcode_h8_0r8_1r8_2r8(
 	uint8_t _h, 
@@ -430,13 +433,22 @@ _make_opcode_h8_0r8_1r8_2r8(
 	uint8_t _r1, 
 	uint8_t _r2)
 {
-	uint32_t opcode_out = (_h & 0xff);
-	opcode_out <<= 8;
-	opcode_out |= (_r2 & 0xff);
-	opcode_out <<= 8;
-	opcode_out |= (_r1 & 0xff);
-	opcode_out <<= 8;
-	opcode_out |= (_r0 & 0xff);
+	uint32_t opcode_out = _h & 0xff;
+	LSHIFT_OR(opcode_out, 8, _r2 & 0xff);
+	LSHIFT_OR(opcode_out, 8, _r1 & 0xff);
+	LSHIFT_OR(opcode_out, 8, _r0 & 0xff);
+	return opcode_out;
+}
+
+static inline uint32_t
+_make_opcode_h8_0r16_2r8(
+	uint8_t _h, 
+	uint16_t _r0, 
+	uint8_t _r2)
+{
+	uint32_t opcode_out = _h & 0xff;
+	LSHIFT_OR(opcode_out, 8, _r2 & 0xff);
+	LSHIFT_OR(opcode_out, 16, _r0 & 0xffff);
 	return opcode_out;
 }
 
@@ -603,6 +615,17 @@ INST_OPCODE_XLAT_DECL(D5rYZ_Q6)
 	const uint8_t rYZ = (opcode & 0x0008) ? R_YL : R_ZL;
 	const uint8_t q = ((opcode & 0x2000) >> 8) | ((opcode & 0x0c00) >> 7) | (opcode & 0x7);
 	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, rYZ, q);
+}
+
+#define get_vd5_x16(_xop) \
+		get_RvR(_xop, 2, d); \
+		const uint16_t x = _xop & 0xffff;
+
+INST_OPCODE_XLAT_DECL(D5X16)
+{
+	get_d5(opcode);
+	const uint16_t x = _avr_flash_read16le(avr, new_pc);
+	return *extend_opcode = _make_opcode_h8_0r16_2r8(handler, x, d);
 }
 
 #define get_h4_k8(_xop) \
@@ -883,7 +906,7 @@ typedef void (*avr_inst_pfn)(
 	INST_ESAC(0x7000, H4K8, andi) /* ANDI	-- 0x7000 -- Logical AND with Immediate -- 0111 kkkk hhhh kkkk */\
 	INST_ESAC(0x8000, D5rYZ_Q6, ldd) /* LD (LDD) -- Load Indirect -- 10q0 qqsd dddd yqqq */\
 	INST_ESAC(0x8200, D5rYZ_Q6, std) /* ST (STD) -- Store Indirect -- 10q0 qqsd dddd yqqq */\
-	INST_ESAC(0x9000, D5, lds) /* LDS -- 0x9000 -- Load Direct from Data Space, 32 bits -- 1001 000d dddd 0000 */\
+	XLAT_INST_ESAC(0x9000, D5, D5X16, lds) /* LDS -- 0x9000 -- Load Direct from Data Space, 32 bits -- 1001 000d dddd 0000 */\
 	INST_ESAC(0x9004, D5, lpm_z) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
 	INST_ESAC(0x9005, D5, lpm_z_post_inc) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
 	INST_ESAC(0x9006, D5, elpm_z) /* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
@@ -892,7 +915,7 @@ typedef void (*avr_inst_pfn)(
 	INST_ESAC(0x900f, D5, pop) /* POP -- 0x900f -- 1001 000d dddd 1111 */\
 	INST_ESAC(0x9001, D5rXYZ, ld_post_inc) /* LD -- 0x9001 -- Load Indirect from Data using XYZ++ -- 1001 00sd dddd iioo */\
 	INST_ESAC(0x9002, D5rXYZ, ld_pre_dec) /* LD -- 0x9002 -- Load Indirect from Data using --XYZ -- 1001 00sd dddd iioo */\
-	INST_ESAC(0x9200, D5, sts) /* STS -- Store Direct to Data Space, 32 bits -- 1001 001d dddd 0000 */\
+	XLAT_INST_ESAC(0x9200, D5, D5X16, sts) /* STS -- Store Direct to Data Space, 32 bits -- 1001 001d dddd 0000 */\
 	XLAT_INST_ESAC(0x920c, D5, D5rXYZ, st_no_op) /* ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo */\
 	INST_ESAC(0x920f, D5, push) /* PUSH -- 0x920f -- 1001 001d dddd 1111 */\
 	INST_ESAC(0x9201, D5rXYZ, st_post_inc) /* ST -- Store Indirect Data Space XYZ++ -- 1001 001d dddd iioo */\
@@ -1368,8 +1391,7 @@ INLINE_INST_DECL(lds_sts, const uint16_t as_opcode)
 {
 	const int load = !(as_opcode & 0x0200);
 
-	get_vd5(opcode);
-	uint16_t x = _avr_flash_read16le(avr, *new_pc);
+	get_vd5_x16(opcode);
 	*new_pc += 2;
 
 	if (load) {
