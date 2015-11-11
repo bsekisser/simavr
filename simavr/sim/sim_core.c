@@ -822,7 +822,7 @@ typedef void (*avr_inst_pfn)(
 	uint32_t opcode);
 
 #define INST_PFN_CALL(_pfn) \
-	_pfn(avr, opcode);
+	_pfn(avr, opcode)
 
 #define INST_CALL(_opname, _args...) \
 	_avr_inst_ ## _opname(avr, opcode, ## _args)
@@ -840,9 +840,9 @@ typedef void (*avr_inst_pfn)(
 	INLINE_INST INST_DECL(_opname, ## _args)
 
 #define INST_SUB_CALL_DECL(_opname, _subcall_opname, _args...) \
-	INST_DECL(_opname) /* TODO: tail call */\
+	INST_DECL(_opname) \
 	{ \
-		INST_CALL(_subcall_opname, ## _args); \
+		return(INST_CALL(_subcall_opname, ## _args)); \
 	}
 
 #define INST_OPCODE(_opname) \
@@ -1000,41 +1000,56 @@ enum {
  *	(_base_cycles + additional_cycles + etc...));
  *
  * NOTE... THIS SHOULD BE THE LAST FUNCTION EXECUTED TO FINALIZE THE INSTRUCTION
- *
- * TODO: tail call style return and next instruction fall through.
- *
  */
+
+typedef struct avr_inst_decode_elem_t {
+	uint16_t opcode;
+	uint16_t mask;
+	avr_inst_pfn inst_pfn;
+	avr_inst_opcode_xlat_pfn xlat_pfn;
+	char *opname;
+}avr_inst_decode_elem_t, *avr_inst_decode_elem_p;
+
+static avr_inst_decode_elem_t _avr_inst_opcode_table[256];
 
 static inline void 
 _avr_inst_cycles(
 	avr_t * avr,
-	uint16_t cycles)
+	uint8_t cycles)
 {
 	avr->cycle += cycles;
-	if (avr->run_cycle_count > cycles)
+	if (avr->run_cycle_count > cycles) {
 		avr->run_cycle_count -= cycles;
-	else
+
+		if ((avr->state == cpu_Running)
+				&& (avr->interrupt_state == 0)) {
+
+			uint32_t opcode = _avr_extend_flash_read32le(avr, avr->pc);
+
+			return(INST_PFN_CALL(_avr_inst_opcode_table[opcode >> 24].inst_pfn));
+		}
+	} else
 		avr->run_cycle_count = 0;
 }
 
 static inline void 
 _avr_inst_next_delta_pc_cycles(
 	avr_t * avr,
-	int32_t delta_pc,
-	uint16_t cycles)
+	int16_t delta_pc,
+	uint8_t cycles)
 {
 	avr->pc += delta_pc;
-	_avr_inst_cycles(avr, cycles);
+	return(_avr_inst_cycles(avr, cycles));
 }
 
 static inline void 
 _avr_inst_next_new_pc_cycles(
 	avr_t * avr,
 	avr_flashaddr_t new_pc,
-	uint16_t cycles)
+	uint8_t cycles)
 {
 	avr->pc = new_pc;
-	_avr_inst_cycles(avr, cycles);
+	return(_avr_inst_cycles(avr, cycles));
 }
 
 #define NEXT_DELTA_PC_CYCLES(_delta_pc, _cycles) \
@@ -1247,7 +1262,7 @@ INLINE_INST_DECL(call_jmp_ei, const uint16_t as_opcode)
 	if (e)
 		z |= avr->data[avr->eind] << 16;
 	STATE("%si%s Z[%04x]\n", e ? "e" : "", c ? "call" : "jmp", z << 1);
-	uint16_t cycles = 0;
+	uint8_t cycles = 0;
 	if (c)
 		cycles += _avr_push_addr(avr, avr->pc + 2) - 1;
 	TRACE_JUMP();
@@ -1261,7 +1276,7 @@ INLINE_INST_DECL(call_jmp_long, const uint16_t as_opcode)
 
 	get_abs22(opcode);
 	STATE("%s 0x%06x\n", call ? "call" : "jmp", a >> 1);
-	uint16_t cycles = 0;
+	uint8_t cycles = 0;
 	if (call)
 		cycles += _avr_push_addr(avr, avr->pc + (2 + 2)) - 1;
 	TRACE_JUMP();
@@ -1277,7 +1292,7 @@ INLINE_INST_DECL(call_jmp_r, const uint16_t as_opcode)
 
 	get_o12(opcode);
 	STATE("r%s .%d [%04x]\n", call ? "call" : "jmp", o >> 1, next_pc + o);
-	uint16_t cycles = 0;
+	uint8_t cycles = 0;
 	if(call)
 		cycles += _avr_push_addr(avr, next_pc) - 1;
 	if (!call || (o != 0)) {
@@ -1908,6 +1923,7 @@ INST_DECL(wdr)
 	NEXT_DELTA_PC_CYCLES(2, 1);
 }
 
+#if 0
 typedef struct avr_inst_decode_elem_t {
 	uint16_t opcode;
 	uint16_t mask;
@@ -1915,6 +1931,7 @@ typedef struct avr_inst_decode_elem_t {
 	avr_inst_opcode_xlat_pfn xlat_pfn;
 	char *opname;
 }avr_inst_decode_elem_t, *avr_inst_decode_elem_p;
+#endif
 
 #undef XLAT_INST_ESAC
 #define XLAT_INST_ESAC(_opcode, _opmask, _xlat, _opname, _args...) \
@@ -1925,7 +1942,7 @@ typedef struct avr_inst_decode_elem_t {
 	XLAT_INST_ESAC(_opcode, _opmask, _opmask, _opname, ## _args)
 
 INST_DECL(decode_one);
-static avr_inst_decode_elem_t _avr_inst_opcode_table[] =  {
+static avr_inst_decode_elem_t _avr_inst_opcode_table[256] =  {
 	{ -1, -1, _avr_inst_decode_one, 0, "" }, // yes virginia, sometimes you can have a free lunch.
 	INST_ESAC_TABLE
 };
