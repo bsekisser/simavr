@@ -113,7 +113,7 @@ void crash(avr_t* avr)
 			do { \
 				printf("%04x: " _f, avr->pc, ## args); \
 			} while (0);
-	
+
 		#define SREG() \
 			do { \
 				printf("%04x: \t\t\t\t\t\t\t\t\tSREG = ", avr->pc); \
@@ -233,7 +233,7 @@ static inline void _avr_set_r(avr_t * avr, uint16_t r, uint8_t v)
 		if (avr->io[io].irq) {
 			avr_raise_irq(avr->io[io].irq + AVR_IOMEM_IRQ_ALL, v);
 			for (int i = 0; i < 8; i++)
-				avr_raise_irq(avr->io[io].irq + i, (v >> i) & 1);				
+				avr_raise_irq(avr->io[io].irq + i, (v >> i) & 1);
 		}
 	} else
 		avr->data[r] = v;
@@ -294,18 +294,18 @@ static inline uint8_t _avr_get_ram(avr_t * avr, uint16_t addr)
 		 * while the core itself uses the "shortcut" array
 		 */
 		READ_SREG_INTO(avr, avr->data[R_SREG]);
-		
+
 	} else if (addr > 31 && addr < 31 + MAX_IOs) {
 		avr_io_addr_t io = AVR_DATA_TO_IO(addr);
-		
+
 		if (avr->io[io].r.c)
 			avr->data[addr] = avr->io[io].r.c(avr, addr, avr->io[io].r.param);
-		
+
 		if (avr->io[io].irq) {
 			uint8_t v = avr->data[addr];
 			avr_raise_irq(avr->io[io].irq + AVR_IOMEM_IRQ_ALL, v);
 			for (int i = 0; i < 8; i++)
-				avr_raise_irq(avr->io[io].irq + i, (v >> i) & 1);				
+				avr_raise_irq(avr->io[io].irq + i, (v >> i) & 1);
 		}
 	}
 	return avr_core_watch_read(avr, addr);
@@ -334,7 +334,7 @@ int _avr_push_addr(avr_t * avr, avr_flashaddr_t addr)
 	uint16_t sp = _avr_sp_get(avr);
 	addr >>= 1;
 	for (int i = 0; i < avr->address_size; i++, addr >>= 8, sp--) {
-		_avr_set_ram(avr, sp, addr);	
+		_avr_set_ram(avr, sp, addr);
 	}
 	_avr_sp_set(avr, sp);
 	return avr->address_size;
@@ -976,7 +976,7 @@ enum {
 	INST_FLAG_BIT_CARRY = 0,
 	INST_FLAG_BIT_SAVE_RESULT,
 };
-	
+
 #define INST_FLAG_NONE 0
 #define INST_FLAG(_flag) (1 << INST_FLAG_BIT_ ## _flag)
 
@@ -1019,7 +1019,7 @@ INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags
 	const int save_result = 0 != (flags & INST_FLAG(SAVE_RESULT));
 
 	uint8_t res = vr0;
-	
+
 	switch (operation) {
 		case	INST_OP_ADD:
 			res += vr1 + (carry ? avr->sreg[S_C] : 0);
@@ -1140,7 +1140,7 @@ INLINE_INST_DECL(bld_bst, const uint16_t as_opcode)
 		STATE("bst %s[%02x], 0x%02x\n", avr_regname(d), vd, mask);
 		avr->sreg[S_T] = (vd >> s) & 1;
 	}
-	
+
 	SREG();
 }
 
@@ -1239,20 +1239,20 @@ INLINE_INST_DECL(elpm_lpm, const uint16_t as_opcode)
 	const int lpm_r0_z = as_opcode == INST_OPCODE(lpm_r0_z); /* ? LPM 0, Z */
 	const int elpm = (!lpm_r0_z) ? (as_opcode & 2) : 0;
 	const int op = (!lpm_r0_z) ? (as_opcode & 1) : 0;
-	
+
 	if (elpm && !avr->rampz)
 		_avr_invalid_opcode(avr);
 
 	uint8_t rzd = 0;
-	
+
 	if (!lpm_r0_z) {
 		get_d5(opcode);
 
 		rzd = d;
 	}
-	
+
 	uint32_t z = _avr_data_read16le(avr, R_ZL);
-	
+
 	if (elpm) {
 		uint8_t rampzv = avr->data[avr->rampz];
 		STATE("elpm %s, (Z[%02x:%04x]%s)\n", avr_regname(rzd), rampzv, z & 0xffff, op ? "+" : "");
@@ -1266,7 +1266,7 @@ INLINE_INST_DECL(elpm_lpm, const uint16_t as_opcode)
 		z++;
 		if (elpm)
 			_avr_set_r(avr, avr->rampz, z >> 16);
-			
+
 		_avr_set_r16le_hl(avr, R_ZL, z);
 	}
 	*cycle += 2; // 3 cycles
@@ -1925,7 +1925,7 @@ run_one_again:
 		avr->pc = new_pc;
 		goto run_one_again;
 	}
-	
+
 	return new_pc;
 }
 
