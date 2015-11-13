@@ -483,9 +483,6 @@ typedef uint32_t (*avr_inst_opcode_xlat_pfn)(
 	uint8_t handler,
 	avr_flashaddr_t new_pc);
 
-#define INST_OPCODE_XLAT_PFN_CALL(_pfn) \
-	_pfn(avr, opcode, &extend_opcode, handler, *new_pc);
-
 #define INST_OPCODE_XLAT_CALL(_xlat, _args...) \
 	_avr_inst_opcode_xlat_ ## _xlat(avr, opcode, extend_opcode, handler, new_pc, ## _args)
 
@@ -494,6 +491,9 @@ typedef uint32_t (*avr_inst_opcode_xlat_pfn)(
 	{ \
 		return(INST_OPCODE_XLAT_CALL(_subcall_xlat, ## _args)); \
 	}
+
+#define INST_OPCODE_XLAT_PFN_CALL(_pfn) \
+	_pfn(avr, opcode, &extend_opcode, handler, *new_pc);
 
 #define INST_OPCODE_XLAT_DECL(_xlat, _args...) \
 	static uint32_t \
@@ -523,8 +523,12 @@ typedef uint32_t (*avr_inst_opcode_xlat_pfn)(
 #define INST_MASK_P2K6		0xff00
 #define INST_MASK_SREG		0xff8f
 
+#define TEST_OP(_opcode, _opmask) \
+	((_opcode) == (opcode & (_opmask)))
+
 #define IF_OP(_opcode, _opmask) \
-	if ((_opcode) == (opcode & (_opmask)))
+	if (TEST_OP(_opcode, _opmask))
+
 
 INST_OPCODE_XLAT_DECL(ALL)
 {
@@ -617,12 +621,37 @@ INST_OPCODE_XLAT_DECL(D4R4)
 		get_RvR(_xop, 0, d); \
 		get_RvR(_xop, 1, r);
 
-INST_OPCODE_XLAT_DECL(D5R5)
+#define get_16le_vd5_vr5(_xop) \
+		get_RvR16le(_xop, 0, d); \
+		get_RvR16le(_xop, 1, r);
+
+INST_OPCODE_XLAT_DECL(get_D5R5, uint16_t test_op, uint8_t *set_d, uint8_t *set_r)
 {
 	get_inst_d5(opcode);
 	get_inst_r5(opcode);
-	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, r, 0);
+
+	int res = 0;
+
+	if (test_op) {
+		uint16_t opcode = _avr_flash_read16le(avr, new_pc);
+		res = TEST_OP(test_op, INST_MASK_D5R5);
+	}
+	
+	if ((test_op && res) || !test_op) {
+		if (set_d)
+			*set_d = d;
+
+		if (set_r)
+			*set_r = r;
+	}
+	
+	if (!test_op)
+		return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, r, 0);
+	else
+		return res;
 }
+
+INST_OPCODE_XLAT_SUB_CALL_DECL(D5R5, get_D5R5, 0, 0, 0)
 
 INST_OPCODE_XLAT_DECL(D16R16)
 {
@@ -679,6 +708,11 @@ INST_OPCODE_XLAT_DECL(H4K8)
 	const uint8_t h = 16 + ((opcode >> 4) & 0xf);
 	const uint8_t k = ((opcode & 0x0f00) >> 4) | (opcode & 0xf);
 	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, h, k, 0);
+}
+
+INST_OPCODE_XLAT_DECL(NONE)
+{
+	return *extend_opcode;
 }
 
 #define get_o7_s3(_xop) \
@@ -892,6 +926,25 @@ typedef void (*avr_inst_pfn)(
 #define INST_AS_OPCODE_SUB_CALL_DECL(_opname, _subcall_opname, _args...) \
 	INST_SUB_CALL_DECL(_opname, _subcall_opname, INST_OPCODE(_opname), ## _args)
 
+#define INST_MASK_ABS22		0xfe0e
+#define INST_MASK_ALL		0xffff
+#define INST_MASK_A5B3		0xff00
+#define INST_MASK_D3R3		0xff88
+#define INST_MASK_D4R4		0xff00
+#define INST_MASK_D5		0xfe0f
+#define INST_MASK_D5A6		0xf800
+#define INST_MASK_D5B3		0xfe08
+#define INST_MASK_D5rXYZ	0xfe03
+#define INST_MASK_D5rYZ_Q6	0xd200
+#define INST_MASK_D5R5		0xfc00
+#define INST_MASK_D16R16	0xff00
+#define INST_MASK_H4K8		0xf000
+#define INST_MASK_NONE		0x0000
+#define INST_MASK_O7S3		0xfc00
+#define INST_MASK_O12		0xf000
+#define INST_MASK_P2K6		0xff00
+#define INST_MASK_SREG		0xff8f
+
 #define INST_ESAC_TABLE /* primary list of avr instruction translation handlers */\
 	/* NOP */\
 	INST_ESAC(0x0000,	ALL,		ALL,		nop) \
@@ -912,7 +965,7 @@ typedef void (*avr_inst_pfn)(
 	/* SBC -- 0x0800 -- Subtract with carry -- 0000 10rd dddd rrrr */\
 	INST_ESAC(0x0800,	D5R5,		D5R5,		sbc) \
 	/* ADD -- 0x0c00 -- Add without carry -- 0000 11rd dddd rrrr */\
-	INST_ESAC(0x0c00,	D5R5,		D5R5,		add) \
+	INST_ESAC(0x0c00,	D5R5,		extend_add,	add) \
 	/* CPSE -- 0x1000 -- Compare, skip if equal -- 0001 00rd dddd rrrr */\
 	INST_ESAC(0x1000,	D5R5,		D5R5,		cpse) \
 	/* CP -- 0x1400 -- Compare -- 0001 01rd dddd rrrr */\
@@ -1064,7 +1117,8 @@ enum { // this table provides instruction case indices
 	INST_ESAC_TABLE_COUNT
 };
 
-#define EXTEND_INST_ESAC_TABLE
+#define EXTEND_INST_ESAC_TABLE \
+	EXTEND_INST_ESAC(add_addc)
 
 #undef EXTEND_INST_ESAC
 #define EXTEND_INST_ESAC(_opname) \
@@ -1093,7 +1147,8 @@ enum {
 };
 
 enum {
-	INST_FLAG_BIT_CARRY = 0,
+	INST_FLAG_BIT_16Bit = 0,
+	INST_FLAG_BIT_CARRY,
 	INST_FLAG_BIT_SAVE_RESULT,
 };
 
@@ -1132,13 +1187,13 @@ INLINE_INST_DECL(adiw_sbiw, const uint16_t as_opcode)
 	(*cycle)++;
 }
 
-
-INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags, uint8_t r0, uint8_t vr0, uint8_t r1, uint8_t vr1)
+INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags, uint8_t r0, uint32_t vr0, uint8_t r1, uint32_t vr1)
 {
 	const int carry = 0 != (flags & INST_FLAG(CARRY));
 	const int save_result = 0 != (flags & INST_FLAG(SAVE_RESULT));
+	const int bytes = (flags & INST_FLAG(16Bit)) ? 2 : 1;
 
-	uint8_t res = vr0;
+	uint32_t res = vr0;
 
 	switch (operation) {
 		case	INST_OP_ADD:
@@ -1168,10 +1223,19 @@ INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags
 		switch (operation) {
 			case	INST_OP_ADD: {
 				if (r0 == r1) {
-					STATE("%s %s[%02x] = %02x\n", carry ? "rol" : "lsl" , avr_regname(r0), vr0, res);
+					T(const char * opname = carry ? "rol" : "lsl";)
+					T(const char *format = (bytes - 1) ? 
+						"%s %s[%02x] = %02x\n"
+						: "%s %s[%04x] = %04x\n";)
+
+					STATE(format, opname, avr_regname(r0), vr0, res);
 				} else {
-					STATE("%s %s[%02x], %s[%02x] = %02x\n", carry ? "addc" : "add",
-						avr_regname(r0), vr0, avr_regname(r1), vr1, res);
+					T(const char *opname = carry ? "addc" : "add";)
+					T(const char *format = (bytes - 1) ?
+						"%s %s[%02x], %s[%02x] = %02x\n"
+						: "%s %s[%04x], %s[%04x] = %04x\n";)
+
+					STATE(format, opname, avr_regname(r0), vr0, avr_regname(r1), vr1, res);
 				}
 			} break;
 			case INST_OP_AND: {
@@ -1219,12 +1283,21 @@ INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags
 		}
 	}
 
-	if (save_result)
-		_avr_set_r(avr, r0, res);
+	if (save_result) {
+		if (bytes == 2)
+			_avr_set_r16le(avr, r0, res);
+		else
+			_avr_set_r(avr, r0, res);
+	}
 
+	if (bytes > 1) {
+		*new_pc += (bytes - 1) << 1;
+		*cycle += (bytes - 1);
+	}
+	
 	switch (operation) {
 		case INST_OP_ADD:
-			_avr_flags_add_zns(avr, res, vr0, vr1, 1);
+			_avr_flags_add_zns(avr, res, vr0, vr1, bytes);
 			break;
 		case INST_OP_AND:
 		case INST_OP_EOR:
@@ -1591,8 +1664,13 @@ INLINE_INST_DECL(sreg_cl_se, const uint16_t as_opcode)
 
 INLINE_INST_DECL(d5r5_common_helper, const uint8_t operation, const uint8_t flags)
 {
-	get_vd5_vr5(opcode);
-	INST_SUB_CALL(alu_common_helper, operation, flags, d, vd, r, vr);
+	if (flags & INST_FLAG(16Bit)) {
+		get_16le_vd5_vr5(opcode);
+		INST_SUB_CALL(alu_common_helper, operation, flags, d, vd, r, vr);
+	} else {
+		get_vd5_vr5(opcode);
+		INST_SUB_CALL(alu_common_helper, operation, flags, d, vd, r, vr);
+	}
 }
 
 INLINE_INST_DECL(h4k8_common_helper, const uint8_t operation, const uint8_t flags)
@@ -1608,6 +1686,7 @@ INLINE_INST_DECL(h4k8_common_helper, const uint8_t operation, const uint8_t flag
  */
 
 INST_SUB_CALL_DECL(add, d5r5_common_helper, INST_OP_ADD, INST_FLAG(SAVE_RESULT))
+INST_SUB_CALL_DECL(add_addc, d5r5_common_helper, INST_OP_ADD, INST_FLAG(16Bit) | INST_FLAG(SAVE_RESULT))
 INST_SUB_CALL_DECL(addc, d5r5_common_helper, INST_OP_ADD, INST_FLAG(CARRY) | INST_FLAG(SAVE_RESULT))
 
 INST_AS_OPCODE_SUB_CALL_DECL(adiw, adiw_sbiw)
@@ -1923,6 +2002,34 @@ INST_DECL(wdr)
 
 #define EXTEND_INST_DECL(_opname, _args...) \
 	INST_OPCODE_XLAT_DECL(extend ## _ ## _opname)
+
+static inline int
+_test_d5r5_is16le(
+	uint8_t d_l,
+	uint8_t r_l,
+	uint8_t d_h,
+	uint8_t r_h)
+{
+	int res = (1 == (d_h - d_l))
+		&& (1 == (r_h - r_l));
+	return res;
+}
+
+EXTEND_INST_DECL(add)
+{
+	uint8_t d, r;
+	*extend_opcode = INST_OPCODE_XLAT_CALL(get_D5R5, 0, &d, &r);
+
+	if (avr->extend) {
+		uint8_t d_h, r_h;
+		if (INST_OPCODE_XLAT_CALL(get_D5R5, INST_OPCODE(addc), &d_h, &r_h)) {
+			if (_test_d5r5_is16le(d, r, d_h, r_h))
+				*extend_opcode = _make_opcode_h8_0r8_1r8_2r8(INST_OPCODE(add_addc), d, r, 0);
+		}
+	}
+
+	return *extend_opcode;
+}
 
 typedef struct avr_inst_decode_elem_t {
 	uint16_t opcode;
