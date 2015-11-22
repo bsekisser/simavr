@@ -452,18 +452,18 @@ _make_opcode_h8_0r16_2r8(
 	return opcode_out;
 }
 
-#define get_d5(o) \
+#define get_inst_d5(o) \
 		const uint8_t d = (o >> 4) & 0x1f;
 
-#define get_vd5(o) \
-		get_d5(o) \
+#define get_inst_vd5(o) \
+		get_inst_d5(o); \
 		const uint8_t vd = avr->data[d];
 
-#define get_r5(o) \
+#define get_inst_r5(o) \
 		const uint8_t r = ((o >> 5) & 0x10) | (o & 0xf);
 
 #define get_vd5_s3(o) \
-		get_vd5(o); \
+		get_inst_vd5(o); \
 		const uint8_t s = o & 7;
 
 #define get_vd5_s3_mask(o) \
@@ -536,9 +536,16 @@ INST_OPCODE_XLAT_DECL(A5B3)
 	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, io, b, mask);
 }
 
+#define get_d5(_xop) \
+		get_R(_xop, 0, d);
+
+#define get_vd5(_xop) \
+		get_RvR(_xop, 0, d);
+
 INST_OPCODE_XLAT_DECL(D5)
 {
-	return *extend_opcode = opcode;
+	get_inst_d5(opcode);
+	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, 0, 0);
 }
 
 #define get_d5_a6(_xop) \
@@ -547,7 +554,7 @@ INST_OPCODE_XLAT_DECL(D5)
 
 INST_OPCODE_XLAT_DECL(D5A6)
 {
-	get_d5(opcode);
+	get_inst_d5(opcode);
 	const uint8_t A = ((((opcode >> 9) & 3) << 4) | ((opcode) & 0xf)) + 32;
 	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, A, 0);
 }
@@ -581,8 +588,8 @@ INST_OPCODE_XLAT_DECL(D4R4)
 
 INST_OPCODE_XLAT_DECL(D5R5)
 {
-	get_d5(opcode);
-	get_r5(opcode);
+	get_inst_d5(opcode);
+	get_inst_r5(opcode);
 	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, r, 0);
 }
 
@@ -599,7 +606,7 @@ INST_OPCODE_XLAT_DECL(D16R16)
 
 INST_OPCODE_XLAT_DECL(D5rXYZ)
 {
-	get_d5(opcode);
+	get_inst_d5(opcode);
 	const uint8_t rXYZ = ((uint8_t []){R_ZL, 0x00, R_YL, R_XL})[(opcode & 0x000c) >> 2];
 	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, rXYZ, 0);
 }
@@ -611,7 +618,7 @@ INST_OPCODE_XLAT_DECL(D5rXYZ)
 
 INST_OPCODE_XLAT_DECL(D5rYZ_Q6)
 {
-	get_d5(opcode);
+	get_inst_d5(opcode);
 	const uint8_t rYZ = (opcode & 0x0008) ? R_YL : R_ZL;
 	const uint8_t q = ((opcode & 0x2000) >> 8) | ((opcode & 0x0c00) >> 7) | (opcode & 0x7);
 	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, rYZ, q);
@@ -623,7 +630,7 @@ INST_OPCODE_XLAT_DECL(D5rYZ_Q6)
 
 INST_OPCODE_XLAT_DECL(D5X16)
 {
-	get_d5(opcode);
+	get_inst_d5(opcode);
 	const uint16_t x = _avr_flash_read16le(avr, new_pc);
 	return *extend_opcode = _make_opcode_h8_0r16_2r8(handler, x, d);
 }
