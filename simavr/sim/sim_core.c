@@ -883,20 +883,20 @@ typedef void (*avr_inst_pfn)(
 	INST_ESAC(0x7000, H4K8, andi) /* ANDI	-- 0x7000 -- Logical AND with Immediate -- 0111 kkkk hhhh kkkk */\
 	INST_ESAC(0x8000, D5rYZ_Q6, ldd) /* LD (LDD) -- Load Indirect -- 10q0 qqsd dddd yqqq */\
 	INST_ESAC(0x8200, D5rYZ_Q6, std) /* ST (STD) -- Store Indirect -- 10q0 qqsd dddd yqqq */\
-	INST_ESAC(0x9000, D5, lds) /* LDS -- 0x9000 -- Load Direct from Data Space, 32 bits -- 1001 0000 0000 0000 */\
+	INST_ESAC(0x9000, D5, lds) /* LDS -- 0x9000 -- Load Direct from Data Space, 32 bits -- 1001 000d dddd 0000 */\
 	INST_ESAC(0x9004, D5, lpm_z) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
 	INST_ESAC(0x9005, D5, lpm_z_post_inc) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
-	INST_ESAC(0x9001, D5rXYZ, ld_post_inc) /* LD -- 0x9001 -- Load Indirect from Data using XYZ++ -- 1001 00sd dddd iioo */\
-	INST_ESAC(0x9002, D5rXYZ, ld_pre_dec) /* LD -- 0x9002 -- Load Indirect from Data using --XYZ -- 1001 00sd dddd iioo */\
 	INST_ESAC(0x9006, D5, elpm_z) /* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
 	INST_ESAC(0x9007, D5, elpm_z_post_inc) /* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
 	XLAT_INST_ESAC(0x900c, D5, D5rXYZ, ld_no_op) /* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
 	INST_ESAC(0x900f, D5, pop) /* POP -- 0x900f -- 1001 000d dddd 1111 */\
-	INST_ESAC(0x9200, D5, sts) /* STS -- Store Direct to Data Space, 32 bits -- 1001 0010 0000 0000 */\
-	INST_ESAC(0x9201, D5rXYZ, st_post_inc) /* ST -- Store Indirect Data Space XYZ++ -- 1001 001d dddd iioo */\
-	INST_ESAC(0x9202, D5rXYZ, st_pre_dec) /* ST -- Store Indirect Data Space --XYZ -- 1001 001d dddd iioo */\
+	INST_ESAC(0x9001, D5rXYZ, ld_post_inc) /* LD -- 0x9001 -- Load Indirect from Data using XYZ++ -- 1001 00sd dddd iioo */\
+	INST_ESAC(0x9002, D5rXYZ, ld_pre_dec) /* LD -- 0x9002 -- Load Indirect from Data using --XYZ -- 1001 00sd dddd iioo */\
+	INST_ESAC(0x9200, D5, sts) /* STS -- Store Direct to Data Space, 32 bits -- 1001 001d dddd 0000 */\
 	XLAT_INST_ESAC(0x920c, D5, D5rXYZ, st_no_op) /* ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo */\
 	INST_ESAC(0x920f, D5, push) /* PUSH -- 0x920f -- 1001 001d dddd 1111 */\
+	INST_ESAC(0x9201, D5rXYZ, st_post_inc) /* ST -- Store Indirect Data Space XYZ++ -- 1001 001d dddd iioo */\
+	INST_ESAC(0x9202, D5rXYZ, st_pre_dec) /* ST -- Store Indirect Data Space --XYZ -- 1001 001d dddd iioo */\
 	INST_ESAC(0x9400, D5, com) /* COM -- 0x9400 -- One’s Complement -- 1001 010d dddd 0000 */\
 	INST_ESAC(0x9401, D5, neg) /* NEG -- 0x9401 -- Two’s Complement -- 1001 010d dddd 0001 */\
 	INST_ESAC(0x9402, D5, swap) /* SWAP -- 0x9402 -- Swap Nibbles -- 1001 010d dddd 0010 */\
