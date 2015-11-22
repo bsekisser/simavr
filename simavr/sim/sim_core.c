@@ -462,14 +462,6 @@ _make_opcode_h8_0r16_2r8(
 #define get_inst_r5(o) \
 		const uint8_t r = ((o >> 5) & 0x10) | (o & 0xf);
 
-#define get_vd5_s3(o) \
-		get_inst_vd5(o); \
-		const uint8_t s = o & 7;
-
-#define get_vd5_s3_mask(o) \
-		get_vd5_s3(o); \
-		const uint8_t mask = 1 << s;
-
 #define get_sreg_bit(o) \
 		const uint8_t b = (o >> 4) & 7;
 
@@ -559,9 +551,17 @@ INST_OPCODE_XLAT_DECL(D5A6)
 	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, A, 0);
 }
 
+#define get_vd5_s3_mask(_xop) \
+		get_RvR(_xop, 0, d); \
+		get_R(_xop, 1, s); (void)s; \
+		get_R(_xop, 2, mask);
+
 INST_OPCODE_XLAT_DECL(D5B3)
 {
-	return *extend_opcode = opcode;
+	get_inst_d5(opcode);
+	const uint8_t s = opcode & 7;
+	const uint8_t mask = 1 << s;
+	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, s, mask);
 }
 
 INST_OPCODE_XLAT_DECL(D3R3)
