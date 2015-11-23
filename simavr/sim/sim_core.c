@@ -650,9 +650,15 @@ INST_OPCODE_XLAT_DECL(H4K8)
 	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, h, k, 0);
 }
 
+#define get_o7_s3(_xop) \
+		get_R(_xop, 2, s); \
+		int16_t o = _xop & 0xffff;
+
 INST_OPCODE_XLAT_DECL(O7S3)
 {
-	return *extend_opcode = opcode;
+	int16_t o = (((int16_t)(opcode << 6)) >> 9) << 1; // offset
+	uint8_t s = opcode & 7;
+	return *extend_opcode = _make_opcode_h8_0r16_2r8(handler, o, s);
 }
 
 #define get_o12(_xop) \
@@ -1178,21 +1184,21 @@ INLINE_INST_DECL(brxc_brxs, const uint16_t as_opcode)
 {
 	const int set = (as_opcode & 0x0400) == 0;		// this bit means BRXC otherwise BRXS
 
-	int16_t o = ((int16_t)(opcode << 6)) >> 9; // offset
-	uint8_t s = opcode & 7;
+	get_o7_s3(opcode);
 	int branch = (avr->sreg[s] && set) || (!avr->sreg[s] && !set);
+	avr_flashaddr_t branch_pc = *new_pc + o;
 	const char *names[2][8] = {
 			{ "brcc", "brne", "brpl", "brvc", NULL, "brhc", "brtc", "brid"},
 			{ "brcs", "breq", "brmi", "brvs", NULL, "brhs", "brts", "brie"},
 	};
 	if (names[set][s]) {
-		STATE("%s .%d [%04x]\t; Will%s branch\n", names[set][s], o, *new_pc + (o << 1), branch ? "":" not");
+		STATE("%s .%d [%04x]\t; Will%s branch\n", names[set][s], o, branch_pc, branch ? "":" not");
 	} else {
-		STATE("%s%c .%d [%04x]\t; Will%s branch\n", set ? "brbs" : "brbc", _sreg_bit_name[s], o, *new_pc + (o << 1), branch ? "":" not");
+		STATE("%s%c .%d [%04x]\t; Will%s branch\n", set ? "brbs" : "brbc", _sreg_bit_name[s], o, branch_pc, branch ? "":" not");
 	}
 	if (branch) {
 		(*cycle)++; // 2 cycles if taken, 1 otherwise
-		*new_pc = *new_pc + (o << 1);
+		*new_pc = branch_pc;
 	}
 }
 
