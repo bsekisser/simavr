@@ -1238,18 +1238,17 @@ INLINE_INST_DECL(elpm_lpm, const uint16_t as_opcode)
 {
 	const int lpm_r0_z = as_opcode == INST_OPCODE(lpm_r0_z); /* ? LPM 0, Z */
 	const int elpm = (!lpm_r0_z) ? (as_opcode & 2) : 0;
+	const int op = (!lpm_r0_z) ? (as_opcode & 1) : 0;
 	
 	if (elpm && !avr->rampz)
 		_avr_invalid_opcode(avr);
 
 	uint8_t rzd = 0;
-	int op = 0;
 	
 	if (!lpm_r0_z) {
 		get_d5(opcode);
 
 		rzd = d;
-		op = opcode & 1;
 	}
 	
 	uint32_t z = _avr_data_read16le(avr, R_ZL);
