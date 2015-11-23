@@ -1859,7 +1859,8 @@ INST_DECL(decode_one)
 	int invalid_opcode = 1;
 	uint32_t extend_opcode = 0;
 
-	opcode = _avr_flash_read16le(avr, avr->pc);
+	avr_flashaddr_t inst_pc = avr->pc;
+	opcode = _avr_flash_read16le(avr, inst_pc);
 
 	avr_inst_decode_elem_p table_elem = &_avr_inst_opcode_table[1];
 	for(uint8_t handler = 1; handler < INST_ESAC_TABLE_COUNT; handler++) {
@@ -1879,7 +1880,7 @@ INST_DECL(decode_one)
 		_avr_invalid_opcode(avr);
 
 	if (extend_opcode)
-		_avr_extend_flash_write32le(avr, avr->pc, extend_opcode);
+		_avr_extend_flash_write32le(avr, inst_pc, extend_opcode);
 	else
 		printf("%s: %06x, %04x, %08x >> not translated.\n", 
 			__FUNCTION__, avr->pc, opcode, extend_opcode);
