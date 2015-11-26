@@ -819,28 +819,30 @@ _avr_flags_add_zns (struct avr_t * avr, uint32_t res, uint32_t rd, uint32_t rr, 
 
 
 static  void
-_avr_flags_sub (struct avr_t * avr, uint8_t res, uint8_t rd, uint8_t rr)
+_avr_flags_sub (struct avr_t * avr, uint32_t res, uint32_t rd, uint32_t rr, const uint8_t bytes)
 {
+	const uint8_t bits = (bytes << 3) - 1;
+	
 	/* carry & half carry */
-	uint8_t sub_carry = (~rd & rr) | (rr & res) | (res & ~rd);
-	avr->sreg[S_H] = (sub_carry >> 3) & 1;
-	avr->sreg[S_C] = (sub_carry >> 7) & 1;
+	uint32_t sub_carry = (~rd & rr) | (rr & res) | (res & ~rd);
+	avr->sreg[S_H] = (sub_carry >> (bits - 4)) & 1;
+	avr->sreg[S_C] = (sub_carry >> bits) & 1;
 
 	/* overflow */
-	avr->sreg[S_V] = (((rd & ~rr & ~res) | (~rd & rr & res)) >> 7) & 1;
+	avr->sreg[S_V] = (((rd & ~rr & ~res) | (~rd & rr & res)) >> bits) & 1;
 }
 
 static  void
-_avr_flags_sub_zns (struct avr_t * avr, uint8_t res, uint8_t rd, uint8_t rr)
+_avr_flags_sub_zns (struct avr_t * avr, uint32_t res, uint32_t rd, uint32_t rr, const uint8_t bytes)
 {
-	_avr_flags_sub(avr, res, rd, rr);
-	_avr_flags_zns(avr, res, 1);
+	_avr_flags_sub(avr, res, rd, rr, bytes);
+	_avr_flags_zns(avr, res, bytes);
 }
 
 static  void
 _avr_flags_sub_Rzns (struct avr_t * avr, uint8_t res, uint8_t rd, uint8_t rr)
 {
-	_avr_flags_sub(avr, res, rd, rr);
+	_avr_flags_sub(avr, res, rd, rr, 1);
 
 	if (res)
 		avr->sreg[S_Z] = 0;
@@ -969,7 +971,7 @@ typedef void (*avr_inst_pfn)(
 	/* CPSE -- 0x1000 -- Compare, skip if equal -- 0001 00rd dddd rrrr */\
 	INST_ESAC(0x1000,	D5R5,		D5R5,		cpse) \
 	/* CP -- 0x1400 -- Compare -- 0001 01rd dddd rrrr */\
-	INST_ESAC(0x1400,	D5R5,		D5R5,		cp) \
+	INST_ESAC(0x1400,	D5R5,		extend_cp,	cp) \
 	/* SUB -- 0x1800-- Subtract without carry -- 0001 10rd dddd rrrr */\
 	INST_ESAC(0x1800,	D5R5,		D5R5,		sub) \
 	/* ADD -- 0x1c00-- Add with carry -- 0001 11rd dddd rrrr */\
@@ -1118,7 +1120,8 @@ enum { // this table provides instruction case indices
 };
 
 #define EXTEND_INST_ESAC_TABLE \
-	EXTEND_INST_ESAC(add_addc)
+	EXTEND_INST_ESAC(add_addc) \
+	EXTEND_INST_ESAC(cp_cpc)
 
 #undef EXTEND_INST_ESAC
 #define EXTEND_INST_ESAC(_opname) \
@@ -1310,7 +1313,7 @@ INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags
 			if (carry)
 				_avr_flags_sub_Rzns(avr, res, vr0, vr1);
 			else
-				_avr_flags_sub_zns(avr, res, vr0, vr1);
+				_avr_flags_sub_zns(avr, res, vr0, vr1, bytes);
 			break;
 	}
 
@@ -1740,6 +1743,7 @@ INST_DECL(com)
 }
 
 INST_SUB_CALL_DECL(cp, d5r5_common_helper, INST_OP_SUB, INST_OP_NONE)
+INST_SUB_CALL_DECL(cp_cpc, d5r5_common_helper, INST_OP_SUB, INST_FLAG(16Bit))
 INST_SUB_CALL_DECL(cpc, d5r5_common_helper, INST_OP_SUB, INST_FLAG(CARRY))
 INST_SUB_CALL_DECL(cpi, h4k8_common_helper, INST_OP_SUB, INST_OP_NONE)
 
@@ -2028,6 +2032,20 @@ EXTEND_INST_DECL(add)
 		}
 	}
 
+	return *extend_opcode;
+}
+
+EXTEND_INST_DECL(cp)
+{
+	uint8_t d, r;
+	*extend_opcode = INST_OPCODE_XLAT_CALL(get_D5R5, &d, &r);
+	
+	if (avr->extend) {
+		if (_extend_test_d5_r5_is16(avr, new_pc, INST_OPCODE(cpc), d, r)) {
+			*extend_opcode = _make_opcode_h8_0r8_1r8_2r8(INST_OPCODE(cp_cpc), d, r, 0);
+		}
+	}
+	
 	return *extend_opcode;
 }
 
