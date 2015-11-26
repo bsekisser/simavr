@@ -894,93 +894,170 @@ typedef void (*avr_inst_pfn)(
 #define INST_MASK_SREG		0xff8f
 
 #define INST_ESAC_TABLE /* primary list of avr instruction translation handlers */\
-	INST_ESAC(0x0000, ALL, nop) /* NOP */\
-	INST_ESAC(0x0100, D4R4, movw) /* MOVW -- 0x0100 -- Copy Register Word -- 0000 0001 dddd rrrr */\
-	INST_ESAC(0x0200, D16R16, muls) /* MULS -- 0x0200 -- Multiply Signed -- 0000 0010 dddd rrrr */\
-	INST_ESAC(0x0300, D3R3, mulsu) /* MULSU -- 0x0300 -- Multiply Signed Unsigned -- 0000 0011 0ddd 0rrr */\
-	INST_ESAC(0x0308, D3R3, fmul) /* FMUL -- 0x0308 -- Fractional Multiply Unsigned -- 0000 0011 0ddd 1rrr */\
-	INST_ESAC(0x0380, D3R3, fmuls) /* FMULS -- 0x0380 -- Multiply Signed -- 0000 0011 1ddd 0rrr */\
-	INST_ESAC(0x0388, D3R3, fmulsu) /* FMULSU -- 0x0388 -- Multiply Signed Unsigned -- 0000 0011 1ddd 1rrr */\
-	INST_ESAC(0x0400, D5R5, cpc) /* CPC -- 0x0400 -- Compare with carry -- 0000 01rd dddd rrrr */\
-	INST_ESAC(0x0800, D5R5, sbc) /* SBC -- 0x0800 -- Subtract with carry -- 0000 10rd dddd rrrr */\
-	INST_ESAC(0x0c00, D5R5, add) /* ADD -- 0x0c00 -- Add without carry -- 0000 11rd dddd rrrr */\
-	INST_ESAC(0x1000, D5R5, cpse) /* CPSE -- 0x1000 -- Compare, skip if equal -- 0001 00rd dddd rrrr */\
-	INST_ESAC(0x1400, D5R5, cp) /* CP -- 0x1400 -- Compare -- 0001 01rd dddd rrrr */\
-	INST_ESAC(0x1800, D5R5, sub) /* SUB -- 0x1800-- Subtract without carry -- 0001 10rd dddd rrrr */\
-	INST_ESAC(0x1c00, D5R5, addc) /* ADD -- 0x1c00-- Add with carry -- 0001 11rd dddd rrrr */\
-	INST_ESAC(0x2000, D5R5, and) /* AND -- 0x2000 -- Logical AND -- 0010 00rd dddd rrrr */\
-	INST_ESAC(0x2400, D5R5, eor) /* EOR -- 0x2400 -- Logical Exclusive OR -- 0010 01rd dddd rrrr */\
-	INST_ESAC(0x2800, D5R5, or) /* OR -- 0x2800 -- Logical OR -- 0010 10rd dddd rrrr */\
-	INST_ESAC(0x2c00, D5R5, mov) /* MOV -- 0x2c00 -- 0010 11rd dddd rrrr */\
-	INST_ESAC(0x3000, H4K8, cpi) /* CPI -- 0x3000 -- Compare Immediate -- 0011 kkkk hhhh kkkk */\
-	INST_ESAC(0x4000, H4K8, sbci) /* SBCI -- 0x4000-- Subtract Immediate With Carry -- 0100 kkkk hhhh kkkk */\
-	INST_ESAC(0x5000, H4K8, subi) /* SUBI -- 0x5000 -- Subtract Immediate -- 0101 kkkk hhhh kkkk */\
-	INST_ESAC(0x6000, H4K8, ori) /* ORI aka SBR -- 0x6000 -- Logical OR with Immediate -- 0110 kkkk hhhh kkkk */\
-	INST_ESAC(0x7000, H4K8, andi) /* ANDI	-- 0x7000 -- Logical AND with Immediate -- 0111 kkkk hhhh kkkk */\
-	INST_ESAC(0x8000, D5rYZ_Q6, ldd) /* LD (LDD) -- Load Indirect -- 10q0 qqsd dddd yqqq */\
-	INST_ESAC(0x8200, D5rYZ_Q6, std) /* ST (STD) -- Store Indirect -- 10q0 qqsd dddd yqqq */\
-	XLAT_INST_ESAC(0x9000, D5, D5X16, lds) /* LDS -- 0x9000 -- Load Direct from Data Space, 32 bits -- 1001 000d dddd 0000 */\
-	INST_ESAC(0x9004, D5, lpm_z) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
-	INST_ESAC(0x9005, D5, lpm_z_post_inc) /* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
-	INST_ESAC(0x9006, D5, elpm_z) /* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
-	INST_ESAC(0x9007, D5, elpm_z_post_inc) /* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
-	XLAT_INST_ESAC(0x900c, D5, D5rXYZ, ld_no_op) /* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
-	INST_ESAC(0x900f, D5, pop) /* POP -- 0x900f -- 1001 000d dddd 1111 */\
-	INST_ESAC(0x9001, D5rXYZ, ld_post_inc) /* LD -- 0x9001 -- Load Indirect from Data using XYZ++ -- 1001 00sd dddd iioo */\
-	INST_ESAC(0x9002, D5rXYZ, ld_pre_dec) /* LD -- 0x9002 -- Load Indirect from Data using --XYZ -- 1001 00sd dddd iioo */\
-	XLAT_INST_ESAC(0x9200, D5, D5X16, sts) /* STS -- Store Direct to Data Space, 32 bits -- 1001 001d dddd 0000 */\
-	XLAT_INST_ESAC(0x920c, D5, D5rXYZ, st_no_op) /* ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo */\
-	INST_ESAC(0x920f, D5, push) /* PUSH -- 0x920f -- 1001 001d dddd 1111 */\
-	INST_ESAC(0x9201, D5rXYZ, st_post_inc) /* ST -- Store Indirect Data Space XYZ++ -- 1001 001d dddd iioo */\
-	INST_ESAC(0x9202, D5rXYZ, st_pre_dec) /* ST -- Store Indirect Data Space --XYZ -- 1001 001d dddd iioo */\
-	INST_ESAC(0x9400, D5, com) /* COM -- 0x9400 -- One’s Complement -- 1001 010d dddd 0000 */\
-	INST_ESAC(0x9401, D5, neg) /* NEG -- 0x9401 -- Two’s Complement -- 1001 010d dddd 0001 */\
-	INST_ESAC(0x9402, D5, swap) /* SWAP -- 0x9402 -- Swap Nibbles -- 1001 010d dddd 0010 */\
-	INST_ESAC(0x9403, D5, inc) /* INC -- 0x9403 -- Increment -- 1001 010d dddd 0011 */\
-	INST_ESAC(0x9405, D5, asr) /* ASR -- 0x9405 -- Arithmetic Shift Right -- 1001 010d dddd 0101 */\
-	INST_ESAC(0x9406, D5, lsr) /* LSR -- 0x9406 -- Logical Shift Right -- 1001 010d dddd 0110 */\
-	INST_ESAC(0x9407, D5, ror) /* ROR -- 0x9407 -- Rotate Right -- 1001 010d dddd 0111 */\
-	INST_ESAC(0x9408, SREG, set_sreg) /* SET -- 0x9408 -- Set SREG Bit -- 1001 0100 Bbbb 1000 */\
-	INST_ESAC(0x9409, ALL, ijmp) /* IJMP --0x9409 -- Indirect jump -- 1001 010c 000e 1001 */\
-	INST_ESAC(0x940a, D5, dec) /* DEC -- 0x940a -- Decrement -- 1001 010d dddd 1010 */\
-	INST_ESAC(0x940c, ABS22, ljmp) /* LJMP -- 0x940c -- Long Call to sub, 32 bits -- 1001 010a aaaa 11ca */\
-	INST_ESAC(0x940e, ABS22, lcall) /* LCALL -- 0x940e -- Long Call to sub, 32 bits -- 1001 010a aaaa 11ca */\
-	INST_ESAC(0x9419, ALL, eijmp) /* EIJMP -- 0x9419 -- Indirect jump -- 1001 010c 000e 1001 */\
-	INST_ESAC(0x9488, SREG, clr_sreg) /* CLR -- 0x9408 -- Set SREG Bit -- 1001 0100 Bbbb 1000 */\
-	INST_ESAC(0x9508, ALL, ret) /* RET -- 0x9508 -- Return -- 1001 0101 0000 1000 */\
-	INST_ESAC(0x9509, ALL, icall) /* ICALL -- 0x9509 -- Indirect Call to Subroutine -- 1001 010c 000e 1001 */\
-	INST_ESAC(0x9518, ALL, reti) /* RETI -- 0x9518 -- Return from Interrupt -- 1001 0101 0001 1000 */\
-	INST_ESAC(0x9519, ALL, eicall) /* EICALL -- 0x9519 -- Indirect Call to Subroutine -- 1001 010c 000e 1001 */\
-	INST_ESAC(0x9588, ALL, sleep) /* SLEEP -- 0x9588 -- 1001 0101 1000 1000 */\
-	INST_ESAC(0x9598, ALL, break) /* BREAK -- 0x9598 -- 1001 0101 1001 1000 */\
-	INST_ESAC(0x95a8, ALL, wdr) /* WDR -- 0x95a8 -- Watchdog Reset -- 1001 0101 1010 1000 */\
-	INST_ESAC(0x95c8, ALL, lpm_r0_z) /* LPM -- 0x95c8 -- Load Program Memory R0 <- (Z) -- 1001 0101 1100 1000 */\
-	INST_ESAC(0x95e8, ALL, spm) /* SPM -- 0x95e8 -- Store Program Memory -- 1001 0101 1110 1000 */\
-	INST_ESAC(0x9600, P2K6, adiw) /* ADIW -- 0x9600 -- Add Immediate to Word -- 1001 0110 KKpp KKKK */\
-	INST_ESAC(0x9700, P2K6, sbiw) /* SBIW -- 0x9700 -- Subtract Immediate from Word -- 1001 0111 KKpp KKKK */\
-	INST_ESAC(0x9800, A5B3, cbi) /* CBI -- 0x9800 -- Clear Bit in I/O Register -- 1001 1000 AAAA Abbb */\
-	INST_ESAC(0x9900, A5B3, sbic) /* SBIC -- 0x9900 -- Skip if Bit in I/O Register is Cleared -- 1001 1001 AAAA Abbb */\
-	INST_ESAC(0x9a00, A5B3, sbi) /* SBI -- 0x9a00 -- Set Bit in I/O Register -- 1001 1010 AAAA Abbb */\
-	INST_ESAC(0x9b00, A5B3, sbis) /* SBIS -- 0x9b00 -- Skip if Bit in I/O Register is Set -- 1001 1011 AAAA Abbb */\
-	INST_ESAC(0x9c00, D5R5, mul) /* MUL -- 0x9c00 -- Multiply Unsigned -- 1001 11rd dddd rrrr */\
-	INST_ESAC(0xb000, D5A6, in) /* IN Rd,A -- 0xb000 -- 1011 0AAd dddd AAAA */\
-	INST_ESAC(0xb800, D5A6, out) /* OUT A,Rr -- 0xb800 -- 1011 1AAd dddd AAAA */\
-	INST_ESAC(0xc000, O12, rjmp) /* RJMP -- 0xc000 -- 1100 kkkk kkkk kkkk */\
-	INST_ESAC(0xd000, O12, rcall) /* RCALL -- 0xd000 -- 1101 kkkk kkkk kkkk */\
-	INST_ESAC(0xe000, H4K8, ldi) /* LDI Rd, K aka SER (LDI r, 0xff) -- 0xe000 -- 1110 kkkk dddd kkkk */\
-	INST_ESAC(0xf000, O7S3, brxs) /* BRXS -- 0xf000 -- Branch if bit in SREG is set -- 1111 0Boo oooo osss */\
-	INST_ESAC(0xf400, O7S3, brxc) /* BRXC -- 0xf400 -- Branch if bit in SREG is clear -- 1111 0Boo oooo osss */\
-	INST_ESAC(0xf800, D5B3, bld) /* BST -- 0xf800 -- Bit Store from T into a Bit in Register -- 1111 10sd dddd 0bbb */\
-	INST_ESAC(0xfa00, D5B3, bst) /* BLD -- 0xfa00 -- Bit Store from Bit in Register to T -- 1111 10sd dddd 0bbb */\
-	INST_ESAC(0xfc00, D5B3, sbrc) /* SBRC -- 0xfc00 -- Skip if Bit in Register is Clear -- 1111 11sd dddd 0bbb */\
-	INST_ESAC(0xfe00, D5B3, sbrs) /* SBRS -- 0xfe00 -- Skip if Bit in Register is Set -- 1111 11sd dddd 0bbb */\
+	/* NOP */\
+	INST_ESAC(0x0000,	ALL,		ALL,		nop) \
+	/* MOVW -- 0x0100 -- Copy Register Word -- 0000 0001 dddd rrrr */\
+	INST_ESAC(0x0100,	D4R4,		D4R4,		movw) \
+	/* MULS -- 0x0200 -- Multiply Signed -- 0000 0010 dddd rrrr */\
+	INST_ESAC(0x0200,	D16R16,		D16R16,		muls) \
+	/* MULSU -- 0x0300 -- Multiply Signed Unsigned -- 0000 0011 0ddd 0rrr */\
+	INST_ESAC(0x0300,	D3R3,		D3R3,		mulsu) \
+	/* FMUL -- 0x0308 -- Fractional Multiply Unsigned -- 0000 0011 0ddd 1rrr */\
+	INST_ESAC(0x0308,	D3R3,		D3R3,		fmul) \
+	/* FMULS -- 0x0380 -- Multiply Signed -- 0000 0011 1ddd 0rrr */\
+	INST_ESAC(0x0380,	D3R3,		D3R3,		fmuls) \
+	/* FMULSU -- 0x0388 -- Multiply Signed Unsigned -- 0000 0011 1ddd 1rrr */\
+	INST_ESAC(0x0388,	D3R3,		D3R3,		fmulsu) \
+	/* CPC -- 0x0400 -- Compare with carry -- 0000 01rd dddd rrrr */\
+	INST_ESAC(0x0400,	D5R5,		D5R5,		cpc) \
+	/* SBC -- 0x0800 -- Subtract with carry -- 0000 10rd dddd rrrr */\
+	INST_ESAC(0x0800,	D5R5,		D5R5,		sbc) \
+	/* ADD -- 0x0c00 -- Add without carry -- 0000 11rd dddd rrrr */\
+	INST_ESAC(0x0c00,	D5R5,		D5R5,		add) \
+	/* CPSE -- 0x1000 -- Compare, skip if equal -- 0001 00rd dddd rrrr */\
+	INST_ESAC(0x1000,	D5R5,		D5R5,		cpse) \
+	/* CP -- 0x1400 -- Compare -- 0001 01rd dddd rrrr */\
+	INST_ESAC(0x1400,	D5R5,		D5R5,		cp) \
+	/* SUB -- 0x1800-- Subtract without carry -- 0001 10rd dddd rrrr */\
+	INST_ESAC(0x1800,	D5R5,		D5R5,		sub) \
+	/* ADD -- 0x1c00-- Add with carry -- 0001 11rd dddd rrrr */\
+	INST_ESAC(0x1c00,	D5R5,		D5R5,		addc) \
+	/* AND -- 0x2000 -- Logical AND -- 0010 00rd dddd rrrr */\
+	INST_ESAC(0x2000,	D5R5,		D5R5,		and) \
+	/* EOR -- 0x2400 -- Logical Exclusive OR -- 0010 01rd dddd rrrr */\
+	INST_ESAC(0x2400,	D5R5,		D5R5,		eor) \
+	/* OR -- 0x2800 -- Logical OR -- 0010 10rd dddd rrrr */\
+	INST_ESAC(0x2800,	D5R5,		D5R5,		or) \
+	/* MOV -- 0x2c00 -- 0010 11rd dddd rrrr */\
+	INST_ESAC(0x2c00,	D5R5,		D5R5,		mov) \
+	/* CPI -- 0x3000 -- Compare Immediate -- 0011 kkkk hhhh kkkk */\
+	INST_ESAC(0x3000,	H4K8,		H4K8,		cpi) \
+	/* SBCI -- 0x4000-- Subtract Immediate With Carry -- 0100 kkkk hhhh kkkk */\
+	INST_ESAC(0x4000,	H4K8,		H4K8,		sbci) \
+	/* SUBI -- 0x5000 -- Subtract Immediate -- 0101 kkkk hhhh kkkk */\
+	INST_ESAC(0x5000,	H4K8,		H4K8,		subi) \
+	/* ORI aka SBR -- 0x6000 -- Logical OR with Immediate -- 0110 kkkk hhhh kkkk */\
+	INST_ESAC(0x6000,	H4K8,		H4K8,		ori) \
+	/* ANDI	-- 0x7000 -- Logical AND with Immediate -- 0111 kkkk hhhh kkkk */\
+	INST_ESAC(0x7000,	H4K8,		H4K8,		andi) \
+	/* LD (LDD) -- Load Indirect -- 10q0 qqsd dddd yqqq */\
+	INST_ESAC(0x8000,	D5rYZ_Q6,	D5rYZ_Q6,	ldd) \
+	/* ST (STD) -- Store Indirect -- 10q0 qqsd dddd yqqq */\
+	INST_ESAC(0x8200,	D5rYZ_Q6,	D5rYZ_Q6,	std) \
+	/* LDS -- 0x9000 -- Load Direct from Data Space, 32 bits -- 1001 000d dddd 0000 */\
+	INST_ESAC(0x9000,	D5,		D5X16,		lds) \
+	/* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
+	INST_ESAC(0x9004,	D5,		D5,		lpm_z) \
+	/* LPM -- Load Program Memory -- 1001 000d dddd 01oo */\
+	INST_ESAC(0x9005,	D5,		D5,		lpm_z_post_inc) \
+	/* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
+	INST_ESAC(0x9006,	D5,		D5,		elpm_z) \
+	/* ELPM -- Load Program Memory -- 1001 000d dddd 01oo */\
+	INST_ESAC(0x9007,	D5,		D5,		elpm_z_post_inc) \
+	/* LD -- Load Indirect from Data using X -- 1001 000d dddd 11oo */\
+	INST_ESAC(0x900c,	D5,		D5rXYZ,		ld_no_op) \
+	/* POP -- 0x900f -- 1001 000d dddd 1111 */\
+	INST_ESAC(0x900f,	D5,		D5,		pop) \
+	/* LD -- 0x9001 -- Load Indirect from Data using XYZ++ -- 1001 00sd dddd iioo */\
+	INST_ESAC(0x9001,	D5rXYZ,		D5rXYZ,		ld_post_inc) \
+	/* LD -- 0x9002 -- Load Indirect from Data using --XYZ -- 1001 00sd dddd iioo */\
+	INST_ESAC(0x9002,	D5rXYZ,		D5rXYZ,		ld_pre_dec) \
+	/* STS -- Store Direct to Data Space, 32 bits -- 1001 001d dddd 0000 */\
+	INST_ESAC(0x9200,	D5,		D5X16,		sts) \
+	/* ST -- Store Indirect Data Space X -- 1001 001d dddd 11oo */\
+	INST_ESAC(0x920c,	D5,		D5rXYZ,		st_no_op) \
+	/* PUSH -- 0x920f -- 1001 001d dddd 1111 */\
+	INST_ESAC(0x920f,	D5,		D5,		push) \
+	/* ST -- Store Indirect Data Space XYZ++ -- 1001 001d dddd iioo */\
+	INST_ESAC(0x9201,	D5rXYZ,		D5rXYZ,		st_post_inc) \
+	/* ST -- Store Indirect Data Space --XYZ -- 1001 001d dddd iioo */\
+	INST_ESAC(0x9202,	D5rXYZ,		D5rXYZ,		st_pre_dec) \
+	/* COM -- 0x9400 -- One’s Complement -- 1001 010d dddd 0000 */\
+	INST_ESAC(0x9400,	D5,		D5,		com) \
+	/* NEG -- 0x9401 -- Two’s Complement -- 1001 010d dddd 0001 */\
+	INST_ESAC(0x9401,	D5,		D5,		neg) \
+	/* SWAP -- 0x9402 -- Swap Nibbles -- 1001 010d dddd 0010 */\
+	INST_ESAC(0x9402,	D5,		D5,		swap) \
+	/* INC -- 0x9403 -- Increment -- 1001 010d dddd 0011 */\
+	INST_ESAC(0x9403,	D5,		D5,		inc) \
+	/* ASR -- 0x9405 -- Arithmetic Shift Right -- 1001 010d dddd 0101 */\
+	INST_ESAC(0x9405,	D5,		D5,		asr) \
+	/* LSR -- 0x9406 -- Logical Shift Right -- 1001 010d dddd 0110 */\
+	INST_ESAC(0x9406,	D5,		D5,		lsr) \
+	/* ROR -- 0x9407 -- Rotate Right -- 1001 010d dddd 0111 */\
+	INST_ESAC(0x9407,	D5,		D5,		ror) \
+	/* SET -- 0x9408 -- Set SREG Bit -- 1001 0100 Bbbb 1000 */\
+	INST_ESAC(0x9408,	SREG,		SREG,		set_sreg) \
+	/* IJMP --0x9409 -- Indirect jump -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9409,	ALL,		ALL,		ijmp) \
+	/* DEC -- 0x940a -- Decrement -- 1001 010d dddd 1010 */\
+	INST_ESAC(0x940a,	D5,		D5,		dec) \
+	/* LJMP -- 0x940c -- Long Call to sub, 32 bits -- 1001 010a aaaa 11ca */\
+	INST_ESAC(0x940c,	ABS22,		ABS22,		ljmp) \
+	/* LCALL -- 0x940e -- Long Call to sub, 32 bits -- 1001 010a aaaa 11ca */\
+	INST_ESAC(0x940e,	ABS22,		ABS22,		lcall) \
+	/* EIJMP -- 0x9419 -- Indirect jump -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9419,	ALL,		ALL,		eijmp) \
+	/* CLR -- 0x9408 -- Set SREG Bit -- 1001 0100 Bbbb 1000 */\
+	INST_ESAC(0x9488,	SREG,		SREG,		clr_sreg) \
+	/* RET -- 0x9508 -- Return -- 1001 0101 0000 1000 */\
+	INST_ESAC(0x9508,	ALL,		ALL,		ret) \
+	/* ICALL -- 0x9509 -- Indirect Call to Subroutine -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9509,	ALL,		ALL,		icall) \
+	/* RETI -- 0x9518 -- Return from Interrupt -- 1001 0101 0001 1000 */\
+	INST_ESAC(0x9518,	ALL,		ALL,		reti) \
+	/* EICALL -- 0x9519 -- Indirect Call to Subroutine -- 1001 010c 000e 1001 */\
+	INST_ESAC(0x9519,	ALL,		ALL,		eicall) \
+	/* SLEEP -- 0x9588 -- 1001 0101 1000 1000 */\
+	INST_ESAC(0x9588,	ALL,		ALL,		sleep) \
+	/* BREAK -- 0x9598 -- 1001 0101 1001 1000 */\
+	INST_ESAC(0x9598,	ALL,		ALL,		break) \
+	/* WDR -- 0x95a8 -- Watchdog Reset -- 1001 0101 1010 1000 */\
+	INST_ESAC(0x95a8,	ALL,		ALL,		wdr) \
+	/* LPM -- 0x95c8 -- Load Program Memory R0 <- (Z) -- 1001 0101 1100 1000 */\
+	INST_ESAC(0x95c8,	ALL,		ALL,		lpm_r0_z) \
+	/* SPM -- 0x95e8 -- Store Program Memory -- 1001 0101 1110 1000 */\
+	INST_ESAC(0x95e8,	ALL,		ALL,		spm) \
+	/* ADIW -- 0x9600 -- Add Immediate to Word -- 1001 0110 KKpp KKKK */\
+	INST_ESAC(0x9600,	P2K6,		P2K6,		adiw) \
+	/* SBIW -- 0x9700 -- Subtract Immediate from Word -- 1001 0111 KKpp KKKK */\
+	INST_ESAC(0x9700,	P2K6,		P2K6,		sbiw) \
+	/* CBI -- 0x9800 -- Clear Bit in I/O Register -- 1001 1000 AAAA Abbb */\
+	INST_ESAC(0x9800,	A5B3,		A5B3,		cbi) \
+	/* SBIC -- 0x9900 -- Skip if Bit in I/O Register is Cleared -- 1001 1001 AAAA Abbb */\
+	INST_ESAC(0x9900,	A5B3,		A5B3,		sbic) \
+	/* SBI -- 0x9a00 -- Set Bit in I/O Register -- 1001 1010 AAAA Abbb */\
+	INST_ESAC(0x9a00,	A5B3,		A5B3,		sbi) \
+	/* SBIS -- 0x9b00 -- Skip if Bit in I/O Register is Set -- 1001 1011 AAAA Abbb */\
+	INST_ESAC(0x9b00,	A5B3,		A5B3,		sbis) \
+	/* MUL -- 0x9c00 -- Multiply Unsigned -- 1001 11rd dddd rrrr */\
+	INST_ESAC(0x9c00,	D5R5,		D5R5,		mul) \
+	/* IN Rd,A -- 0xb000 -- 1011 0AAd dddd AAAA */\
+	INST_ESAC(0xb000,	D5A6,		D5A6,		in) \
+	/* OUT A,Rr -- 0xb800 -- 1011 1AAd dddd AAAA */\
+	INST_ESAC(0xb800,	D5A6,		D5A6,		out) \
+	/* RJMP -- 0xc000 -- 1100 kkkk kkkk kkkk */\
+	INST_ESAC(0xc000,	O12,		O12,		rjmp) \
+	/* RCALL -- 0xd000 -- 1101 kkkk kkkk kkkk */\
+	INST_ESAC(0xd000,	O12,		O12,		rcall) \
+	/* LDI Rd, K aka SER (LDI r, 0xff) -- 0xe000 -- 1110 kkkk dddd kkkk */\
+	INST_ESAC(0xe000,	H4K8,		H4K8,		ldi) \
+	/* BRXS -- 0xf000 -- Branch if bit in SREG is set -- 1111 0Boo oooo osss */\
+	INST_ESAC(0xf000,	O7S3,		O7S3,		brxs) \
+	/* BRXC -- 0xf400 -- Branch if bit in SREG is clear -- 1111 0Boo oooo osss */\
+	INST_ESAC(0xf400,	O7S3,		O7S3,		brxc) \
+	/* BST -- 0xf800 -- Bit Store from T into a Bit in Register -- 1111 10sd dddd 0bbb */\
+	INST_ESAC(0xf800,	D5B3,		D5B3,		bld) \
+	/* BLD -- 0xfa00 -- Bit Store from Bit in Register to T -- 1111 10sd dddd 0bbb */\
+	INST_ESAC(0xfa00,	D5B3,		D5B3,		bst) \
+	/* SBRC -- 0xfc00 -- Skip if Bit in Register is Clear -- 1111 11sd dddd 0bbb */\
+	INST_ESAC(0xfc00,	D5B3,		D5B3,		sbrc) \
+	/* SBRS -- 0xfe00 -- Skip if Bit in Register is Set -- 1111 11sd dddd 0bbb */\
+	INST_ESAC(0xfe00,	D5B3,		D5B3,		sbrs)
 
 #undef INST_ESAC
-#define INST_ESAC(_opcode, _opmask, _opname, _args...) \
+#define INST_ESAC(_opcode, _opmask, _xlat, _opname, _args...) \
 	_avr_inst_ ## _opcode ## _ ##  _opname,
-#undef XLAT_INST_ESAC
-#define XLAT_INST_ESAC(_opcode, _opmask, _xlat, _opname, _args...) \
-	INST_ESAC(_opcode, _opmask, _opname, _args...)
 
 enum { // this table provides instruction case indices
 	INST_ESAC_NONE = 0, // starting with zero...  bad...  special case.
@@ -989,11 +1066,8 @@ enum { // this table provides instruction case indices
 };
 
 #undef INST_ESAC
-#define INST_ESAC(_opcode, _opmask, _opname, _args...) \
+#define INST_ESAC(_opcode, _opmask, _xlat, _opname, _args...) \
 	INST_OPCODE(_opname) = _opcode,
-#undef XLAT_INST_ESAC
-#define XLAT_INST_ESAC(_opcode, _opmask, _xlat, _opname, _args...) \
-	INST_ESAC(_opcode, _opmask, _opname, _args...)
 
 enum { // this table provides opcode cross references
 	INST_ESAC_TABLE
@@ -1841,13 +1915,9 @@ typedef struct avr_inst_decode_elem_t {
 	char *opname;
 }avr_inst_decode_elem_t, *avr_inst_decode_elem_p;
 
-#undef XLAT_INST_ESAC
-#define XLAT_INST_ESAC(_opcode, _opmask, _xlat, _opname, _args...) \
-	{ _opcode, INST_MASK_ ## _opmask, _avr_inst_ ## _opname, _avr_inst_opcode_xlat_ ## _xlat, #_opname },
-
 #undef INST_ESAC
-#define INST_ESAC(_opcode, _opmask, _opname, _args...) \
-	XLAT_INST_ESAC(_opcode, _opmask, _opmask, _opname, _args...)
+#define INST_ESAC(_opcode, _opmask, _xlat, _opname, _args...) \
+	{ _opcode, INST_MASK_ ## _opmask, _avr_inst_ ## _opname, _avr_inst_opcode_xlat_ ## _xlat, #_opname },
 
 INST_DECL(decode_one);
 static avr_inst_decode_elem_t _avr_inst_opcode_table[] =  {
@@ -1873,7 +1943,6 @@ _avr_inst_collision_detected(
 	if ((_opcode) == (opcode & (_opmask)))
 
 #undef INST_ESAC
-#undef XLAT_INST_ESAC
 
 /*
  * Main opcode decoder
