@@ -725,39 +725,36 @@ INST_OPCODE_XLAT_DECL(SREG)
 \****************************************************************************/
 
 static  void
-_avr_flags_zns (struct avr_t * avr, uint8_t res)
+_avr_flags_zns (struct avr_t * avr, uint32_t res, const uint8_t bytes)
 {
+	const uint8_t bits = (bytes << 3) - 1;
+
 	avr->sreg[S_Z] = res == 0;
-	avr->sreg[S_N] = (res >> 7) & 1;
+	avr->sreg[S_N] = (res >> bits) & 1;
 	avr->sreg[S_S] = avr->sreg[S_N] ^ avr->sreg[S_V];
 }
 
 static  void
-_avr_flags_zns16 (struct avr_t * avr, uint16_t res)
+_avr_flags_add_zns (struct avr_t * avr, uint32_t res, uint32_t rd, uint32_t rr, const uint8_t bytes)
 {
-	avr->sreg[S_Z] = res == 0;
-	avr->sreg[S_N] = (res >> 15) & 1;
-	avr->sreg[S_S] = avr->sreg[S_N] ^ avr->sreg[S_V];
-}
-
-static  void
-_avr_flags_add_zns (struct avr_t * avr, uint8_t res, uint8_t rd, uint8_t rr)
-{
+	const uint8_t bits = (bytes << 3) - 1;
+	const uint8_t zns_res = res & (0xff << ((bytes - 1) << 3));
+	
 	/* carry & half carry */
-	uint8_t add_carry = (rd & rr) | (rr & ~res) | (~res & rd);
-	avr->sreg[S_H] = (add_carry >> 3) & 1;
-	avr->sreg[S_C] = (add_carry >> 7) & 1;
+	uint32_t add_carry = (rd & rr) | (rr & ~res) | (~res & rd);
+	avr->sreg[S_H] = (add_carry >> (bits - 4)) & 1;
+	avr->sreg[S_C] = (add_carry >> bits) & 1;
 
 	/* overflow */
-	avr->sreg[S_V] = (((rd & rr & ~res) | (~rd & ~rr & res)) >> 7) & 1;
+	avr->sreg[S_V] = (((rd & rr & ~res) | (~rd & ~rr & res)) >> bits) & 1;
 
 	/* zns */
-	_avr_flags_zns(avr, res);
+	_avr_flags_zns(avr, zns_res, bytes);
 }
 
 
 static  void
-_avr_flags_sub_zns (struct avr_t * avr, uint8_t res, uint8_t rd, uint8_t rr)
+_avr_flags_sub (struct avr_t * avr, uint8_t res, uint8_t rd, uint8_t rr)
 {
 	/* carry & half carry */
 	uint8_t sub_carry = (~rd & rr) | (rr & res) | (res & ~rd);
@@ -766,32 +763,24 @@ _avr_flags_sub_zns (struct avr_t * avr, uint8_t res, uint8_t rd, uint8_t rr)
 
 	/* overflow */
 	avr->sreg[S_V] = (((rd & ~rr & ~res) | (~rd & rr & res)) >> 7) & 1;
-
-	/* zns */
-	_avr_flags_zns(avr, res);
 }
 
 static  void
-_avr_flags_Rzns (struct avr_t * avr, uint8_t res)
+_avr_flags_sub_zns (struct avr_t * avr, uint8_t res, uint8_t rd, uint8_t rr)
 {
-	if (res)
-		avr->sreg[S_Z] = 0;
-	avr->sreg[S_N] = (res >> 7) & 1;
-	avr->sreg[S_S] = avr->sreg[S_N] ^ avr->sreg[S_V];
+	_avr_flags_sub(avr, res, rd, rr);
+	_avr_flags_zns(avr, res, 1);
 }
 
 static  void
 _avr_flags_sub_Rzns (struct avr_t * avr, uint8_t res, uint8_t rd, uint8_t rr)
 {
-	/* carry & half carry */
-	uint8_t sub_carry = (~rd & rr) | (rr & res) | (res & ~rd);
-	avr->sreg[S_H] = (sub_carry >> 3) & 1;
-	avr->sreg[S_C] = (sub_carry >> 7) & 1;
+	_avr_flags_sub(avr, res, rd, rr);
 
-	/* overflow */
-	avr->sreg[S_V] = (((rd & ~rr & ~res) | (~rd & rr & res)) >> 7) & 1;
-
-	_avr_flags_Rzns(avr, res);
+	if (res)
+		avr->sreg[S_Z] = 0;
+	avr->sreg[S_N] = (res >> 7) & 1;
+	avr->sreg[S_S] = avr->sreg[S_N] ^ avr->sreg[S_V];
 }
 
 static  void
@@ -806,18 +795,15 @@ _avr_flags_zcvs (struct avr_t * avr, uint8_t res, uint8_t vr)
 static  void
 _avr_flags_zcnvs (struct avr_t * avr, uint8_t res, uint8_t vr)
 {
-	avr->sreg[S_Z] = res == 0;
-	avr->sreg[S_C] = vr & 1;
 	avr->sreg[S_N] = res >> 7;
-	avr->sreg[S_V] = avr->sreg[S_N] ^ avr->sreg[S_C];
-	avr->sreg[S_S] = avr->sreg[S_N] ^ avr->sreg[S_V];
+	_avr_flags_zcvs(avr, res, vr);
 }
 
 static  void
 _avr_flags_znv0s (struct avr_t * avr, uint8_t res)
 {
 	avr->sreg[S_V] = 0;
-	_avr_flags_zns(avr, res);
+	_avr_flags_zns(avr, res, 1);
 }
 
 static inline int _avr_is_instruction_32_bits(avr_t * avr, avr_flashaddr_t pc)
@@ -1117,7 +1103,7 @@ INLINE_INST_DECL(adiw_sbiw, const uint16_t as_opcode)
 		avr->sreg[S_V] = ((vp & ~res) >> 15) & 1;
 		avr->sreg[S_C] = ((res & ~vp) >> 15) & 1;
 	}
-	_avr_flags_zns16(avr, res);
+	_avr_flags_zns(avr, res, 2);
 	SREG();
 	(*cycle)++;
 }
@@ -1214,7 +1200,7 @@ INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags
 
 	switch (operation) {
 		case INST_OP_ADD:
-			_avr_flags_add_zns(avr, res, vr0, vr1);
+			_avr_flags_add_zns(avr, res, vr0, vr1, 1);
 			break;
 		case INST_OP_AND:
 		case INST_OP_EOR:
@@ -1669,7 +1655,7 @@ INST_DECL(dec)
 	STATE("dec %s[%02x] = %02x\n", avr_regname(d), vd, res);
 	_avr_set_r(avr, d, res);
 	avr->sreg[S_V] = res == 0x7f;
-	_avr_flags_zns(avr, res);
+	_avr_flags_zns(avr, res, 1);
 	SREG();
 }
 
@@ -1697,7 +1683,7 @@ INST_DECL(inc)
 	STATE("inc %s[%02x] = %02x\n", avr_regname(d), vd, res);
 	_avr_set_r(avr, d, res);
 	avr->sreg[S_V] = res == 0x80;
-	_avr_flags_zns(avr, res);
+	_avr_flags_zns(avr, res, 1);
 	SREG();
 }
 
@@ -1787,7 +1773,7 @@ INST_DECL(neg)
 	avr->sreg[S_H] = ((res | vd) >> 3) & 1; /* ((res >> 3) | (vd >> 3)) & 1; */
 	avr->sreg[S_V] = res == 0x80;
 	avr->sreg[S_C] = res != 0;
-	_avr_flags_zns(avr, res);
+	_avr_flags_zns(avr, res, 1);
 	SREG();
 }
 
