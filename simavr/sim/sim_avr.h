@@ -294,6 +294,8 @@ typedef struct avr_t {
 
 	// DEBUG ONLY -- value ignored if CONFIG_SIMAVR_TRACE = 0
 	uint8_t	trace : 1,
+		// Use extended instructions which may alter cycle timing accuracy, defalt to 0
+			extend : 1,
 			log : 2; // log level, default to 1
 
 	// Only used if CONFIG_SIMAVR_TRACE is defined

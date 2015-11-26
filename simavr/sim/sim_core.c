@@ -486,14 +486,45 @@ typedef uint32_t (*avr_inst_opcode_xlat_pfn)(
 #define INST_OPCODE_XLAT_PFN_CALL(_pfn) \
 	_pfn(avr, opcode, &extend_opcode, handler, *new_pc);
 
-#define INST_OPCODE_XLAT_DECL(_xlat) \
+#define INST_OPCODE_XLAT_CALL(_xlat, _args...) \
+	_avr_inst_opcode_xlat_ ## _xlat(avr, opcode, extend_opcode, handler, new_pc, ## _args)
+
+#define INST_OPCODE_XLAT_SUB_CALL_DECL(_xlat, _subcall_xlat, _args...) \
+	INST_OPCODE_XLAT_DECL(_xlat) \
+	{ \
+		return(INST_OPCODE_XLAT_CALL(_subcall_xlat, ## _args)); \
+	}
+
+#define INST_OPCODE_XLAT_DECL(_xlat, _args...) \
 	static uint32_t \
 	_avr_inst_opcode_xlat_ ## _xlat( \
 		avr_t * avr, \
 		uint32_t opcode, \
 		uint32_t * extend_opcode, \
 		uint8_t handler, \
-		avr_flashaddr_t new_pc)
+		avr_flashaddr_t new_pc, \
+		## _args)
+
+#define INST_MASK_ABS22		0xfe0e
+#define INST_MASK_ALL		0xffff
+#define INST_MASK_A5B3		0xff00
+#define INST_MASK_D3R3		0xff88
+#define INST_MASK_D4R4		0xff00
+#define INST_MASK_D5		0xfe0f
+#define INST_MASK_D5A6		0xf800
+#define INST_MASK_D5B3		0xfe08
+#define INST_MASK_D5rXYZ	0xfe03
+#define INST_MASK_D5rYZ_Q6	0xd200
+#define INST_MASK_D5R5		0xfc00
+#define INST_MASK_D16R16	0xff00
+#define INST_MASK_H4K8		0xf000
+#define INST_MASK_O7S3		0xfc00
+#define INST_MASK_O12		0xf000
+#define INST_MASK_P2K6		0xff00
+#define INST_MASK_SREG		0xff8f
+
+#define IF_OP(_opcode, _opmask) \
+	if ((_opcode) == (opcode & (_opmask)))
 
 INST_OPCODE_XLAT_DECL(ALL)
 {
@@ -861,24 +892,6 @@ typedef void (*avr_inst_pfn)(
 #define INST_AS_OPCODE_SUB_CALL_DECL(_opname, _subcall_opname, _args...) \
 	INST_SUB_CALL_DECL(_opname, _subcall_opname, INST_OPCODE(_opname), ## _args)
 
-#define INST_MASK_ABS22		0xfe0e
-#define INST_MASK_ALL		0xffff
-#define INST_MASK_A5B3		0xff00
-#define INST_MASK_D3R3		0xff88
-#define INST_MASK_D4R4		0xff00
-#define INST_MASK_D5		0xfe0f
-#define INST_MASK_D5A6		0xf800
-#define INST_MASK_D5B3		0xfe08
-#define INST_MASK_D5rXYZ	0xfe03
-#define INST_MASK_D5rYZ_Q6	0xd200
-#define INST_MASK_D5R5		0xfc00
-#define INST_MASK_D16R16	0xff00
-#define INST_MASK_H4K8		0xf000
-#define INST_MASK_O7S3		0xfc00
-#define INST_MASK_O12		0xf000
-#define INST_MASK_P2K6		0xff00
-#define INST_MASK_SREG		0xff8f
-
 #define INST_ESAC_TABLE /* primary list of avr instruction translation handlers */\
 	/* NOP */\
 	INST_ESAC(0x0000,	ALL,		ALL,		nop) \
@@ -1049,6 +1062,17 @@ enum { // this table provides instruction case indices
 	INST_ESAC_NONE = 0, // starting with zero...  bad...  special case.
 	INST_ESAC_TABLE // standard avr instructions
 	INST_ESAC_TABLE_COUNT
+};
+
+#define EXTEND_INST_ESAC_TABLE
+
+#undef EXTEND_INST_ESAC
+#define EXTEND_INST_ESAC(_opname) \
+	INST_OPCODE(_opname),
+
+enum { // this table provides extended instruction case indices
+	EXTEND_INST_ESAC_TABLE_START = INST_ESAC_TABLE_COUNT - 1,
+	EXTEND_INST_ESAC_TABLE
 };
 
 #undef INST_ESAC
@@ -1893,6 +1917,13 @@ INST_DECL(wdr)
 	avr_ioctl(avr, AVR_IOCTL_WATCHDOG_RESET, 0);
 }
 
+/*
+ * begin extended instruction test definitions
+ */
+
+#define EXTEND_INST_DECL(_opname, _args...) \
+	INST_OPCODE_XLAT_DECL(extend ## _ ## _opname)
+
 typedef struct avr_inst_decode_elem_t {
 	uint16_t opcode;
 	uint16_t mask;
@@ -1905,10 +1936,15 @@ typedef struct avr_inst_decode_elem_t {
 #define INST_ESAC(_opcode, _opmask, _xlat, _opname, _args...) \
 	{ _opcode, INST_MASK_ ## _opmask, _avr_inst_ ## _opname, _avr_inst_opcode_xlat_ ## _xlat, #_opname },
 
+#undef EXTEND_INST_ESAC
+#define EXTEND_INST_ESAC(_opname) \
+	INST_ESAC(0x0000, NONE, NONE, _opname)
+
 INST_DECL(decode_one);
 static avr_inst_decode_elem_t _avr_inst_opcode_table[] =  {
 	{ -1, -1, _avr_inst_decode_one, 0, "" }, // yes virginia, sometimes you can have a free lunch.
 	INST_ESAC_TABLE
+	EXTEND_INST_ESAC_TABLE
 };
 
 static void
@@ -1924,9 +1960,6 @@ _avr_inst_collision_detected(
 		__FUNCTION__, table_elem->opcode, table_elem->mask, table_elem->opname, 
 		extend_opcode, extend_table_elem->opcode, extend_table_elem->mask, extend_table_elem->opname);
 }
-
-#define IF_OP(_opcode, _opmask) \
-	if ((_opcode) == (opcode & (_opmask)))
 
 #undef INST_ESAC
 

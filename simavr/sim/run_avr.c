@@ -39,6 +39,7 @@ void display_usage(char * app)
 		   "       -g: Listen for gdb connection on port 1234\n"
 		   "       -ff: Load next .hex file as flash\n"
 		   "       -ee: Load next .hex file as eeprom\n"
+		   "       -extend: Use extended instructions which may alter cycle accuracy.\n"
 		   "       -v: Raise verbosity level (can be passed more than once)\n"
 		   "   Supported AVR cores:\n");
 	for (int i = 0; avr_kind[i]; i++) {
@@ -68,6 +69,7 @@ int main(int argc, char *argv[])
 	long f_cpu = 0;
 	int trace = 0;
 	int gdb = 0;
+	int extend = 0;
 	int log = 1;
 	char name[16] = "";
 	uint32_t loadBase = AVR_SEGMENT_OFFSET_FLASH;
@@ -97,6 +99,8 @@ int main(int argc, char *argv[])
 				trace_vectors[trace_vectors_count++] = atoi(argv[++pi]);
 		} else if (!strcmp(argv[pi], "-g") || !strcmp(argv[pi], "-gdb")) {
 			gdb++;
+		} else if (!strcmp(argv[pi], "-extend")) {
+			extend = 1;
 		} else if (!strcmp(argv[pi], "-v")) {
 			log++;
 		} else if (!strcmp(argv[pi], "-ee")) {
@@ -159,6 +163,7 @@ int main(int argc, char *argv[])
 		printf("Attempted to load a bootloader at %04x\n", f.flashbase);
 		avr->pc = f.flashbase;
 	}
+	avr->extend = extend;
 	avr->log = (log > LOG_TRACE ? LOG_TRACE : log);
 	avr->trace = trace;
 	for (int ti = 0; ti < trace_vectors_count; ti++) {
