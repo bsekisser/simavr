@@ -29,6 +29,8 @@
 #include "avr_flash.h"
 #include "avr_watchdog.h"
 
+#include "sim_profiler.h"
+
 // SREG bit names
 const char * _sreg_bit_name = "cznvshti";
 
@@ -1140,6 +1142,7 @@ enum { // this table provides instruction case indices
 enum { // this table provides extended instruction case indices
 	EXTEND_INST_ESAC_TABLE_START = INST_ESAC_TABLE_COUNT - 1,
 	EXTEND_INST_ESAC_TABLE
+	EXTEND_INST_ESAC_TABLE_COUNT
 };
 
 #undef INST_ESAC
@@ -2038,6 +2041,9 @@ INST_DECL(wdr)
 
 /*
  * begin extended instruction test definitions
+ *
+ * instructions which alter cycle timing accuracy
+ *   should only be used if extensions are enabled.
  */
 
 #define EXTEND_INST_DECL(_opname, _args...) \
@@ -2146,6 +2152,21 @@ static avr_inst_decode_elem_t _avr_inst_opcode_table[] =  {
 	EXTEND_INST_ESAC_TABLE
 };
 
+
+#undef INST_ESAC
+#define INST_ESAC(_opcode, _opmask, _xlat, _opname, _args...) \
+	# _opname,
+
+#undef EXTEND_INST_ESAC
+#define EXTEND_INST_ESAC(_opname) \
+	# _opname,
+
+const char *op_name_table[256] = {
+	0,
+	INST_ESAC_TABLE
+	EXTEND_INST_ESAC_TABLE
+};
+
 static void
 _avr_inst_collision_detected(
 	avr_t * avr,
@@ -2190,7 +2211,8 @@ INST_DECL(decode_one)
 				invalid_opcode = 0;
 				opcode |= (handler << 24);
 				opcode = INST_OPCODE_XLAT_PFN_CALL(table_elem->xlat_pfn);
-				INST_PFN_SUB_CALL(_avr_inst_opcode_table[opcode >> 24].inst_pfn);
+				uint8_t op_handler = 1 ? opcode >> 24 : handler;
+				PROFILE_ISEQ(op_handler, INST_PFN_SUB_CALL(_avr_inst_opcode_table[op_handler].inst_pfn));
 			}
 		} else
 			if (0) _avr_inst_collision_detected(avr, opcode, table_elem, extend_opcode);
@@ -2209,6 +2231,13 @@ INST_DECL(decode_one)
 
 avr_flashaddr_t avr_run_one(avr_t * avr)
 {
+	static int profiler_inited = 0;
+
+	if (1 && !profiler_inited) {
+		sim_profiler_init(op_name_table);
+		profiler_inited = 1;
+	}
+
 run_one_again:
 #if CONFIG_SIMAVR_TRACE
 	/*
@@ -2235,7 +2264,8 @@ run_one_again:
 	avr_flashaddr_t		new_pc = avr->pc + 2;	// future "default" pc
 	uint16_t		cycle = 1;
 
-	INST_PFN_CALL(_avr_inst_opcode_table[opcode >> 24].inst_pfn);
+	uint8_t handler = opcode >> 24;
+	PROFILE_ISEQ(handler, INST_PFN_CALL(_avr_inst_opcode_table[handler].inst_pfn));
 
 	avr->cycle += cycle;
 

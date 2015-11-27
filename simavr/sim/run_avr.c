@@ -32,6 +32,8 @@
 
 #include "sim_core_decl.h"
 
+#include "sim_profiler.h"
+
 void display_usage(char * app)
 {
 	printf("Usage: %s [-t] [-g] [-v] [-m <device>] [-f <frequency>] firmware\n", app);
@@ -58,6 +60,21 @@ sig_int(
 		int sign)
 {
 	printf("signal caught, simavr terminating\n");
+
+	if (avr)
+		avr_terminate(avr);
+	exit(0);
+}
+
+void
+sig_quit(
+		int sign)
+{
+	printf("signal caught, simavr terminating\n");
+
+	if (_sim_profiler_active)
+		sim_profiler_generate_report();
+
 	if (avr)
 		avr_terminate(avr);
 	exit(0);
@@ -181,12 +198,13 @@ int main(int argc, char *argv[])
 
 	signal(SIGINT, sig_int);
 	signal(SIGTERM, sig_int);
+	signal(SIGQUIT, sig_quit);
 
 	for (;;) {
 		int state = avr_run(avr);
 		if ( state == cpu_Done || state == cpu_Crashed)
 			break;
 	}
-	
+
 	avr_terminate(avr);
 }
