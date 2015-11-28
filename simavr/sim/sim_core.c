@@ -520,6 +520,7 @@ typedef uint32_t (*avr_inst_opcode_xlat_pfn)(
 #define INST_MASK_D5R5		0xfc00
 #define INST_MASK_D16R16	0xff00
 #define INST_MASK_H4K8		0xf000
+#define INST_MASK_NONE		0x0000
 #define INST_MASK_O7S3		0xfc00
 #define INST_MASK_O12		0xf000
 #define INST_MASK_P2K6		0xff00
@@ -530,7 +531,6 @@ typedef uint32_t (*avr_inst_opcode_xlat_pfn)(
 
 #define IF_OP(_opcode, _opmask) \
 	if (TEST_OP(_opcode, _opmask))
-
 
 INST_OPCODE_XLAT_DECL(ALL)
 {
@@ -591,12 +591,33 @@ INST_OPCODE_XLAT_SUB_CALL_DECL(D5, get_D5, 0)
 		get_R(_xop, 0, d); \
 		get_R(_xop, 1, A);
 
-INST_OPCODE_XLAT_DECL(D5A6)
+INST_OPCODE_XLAT_DECL(get_D5A6, uint16_t test_op, uint8_t *set_d, uint8_t *set_a)
 {
 	get_inst_d5(opcode);
 	const uint8_t A = ((((opcode >> 9) & 3) << 4) | ((opcode) & 0xf)) + 32;
-	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, A, 0);
+
+	int res = 0;
+
+	if (test_op) {
+		uint16_t opcode = _avr_flash_read16le(avr, new_pc);
+		res = TEST_OP(test_op, INST_MASK_D5A6);
+	}
+	
+	if ((test_op && res) || !test_op) {
+		if (set_d)
+			*set_d = d;
+
+		if (set_a)
+			*set_a = A;
+	}
+
+	if (!test_op)
+		return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, A, 0);
+	else
+		return res;
 }
+
+INST_OPCODE_XLAT_SUB_CALL_DECL(D5A6, get_D5A6, 0, 0, 0)
 
 #define get_vd5_s3_mask(_xop) \
 		get_RvR(_xop, 0, d); \
@@ -963,25 +984,6 @@ typedef void (*avr_inst_pfn)(
 #define INST_AS_OPCODE_SUB_CALL_DECL(_opname, _subcall_opname, _args...) \
 	INST_SUB_CALL_DECL(_opname, _subcall_opname, INST_OPCODE(_opname), ## _args)
 
-#define INST_MASK_ABS22		0xfe0e
-#define INST_MASK_ALL		0xffff
-#define INST_MASK_A5B3		0xff00
-#define INST_MASK_D3R3		0xff88
-#define INST_MASK_D4R4		0xff00
-#define INST_MASK_D5		0xfe0f
-#define INST_MASK_D5A6		0xf800
-#define INST_MASK_D5B3		0xfe08
-#define INST_MASK_D5rXYZ	0xfe03
-#define INST_MASK_D5rYZ_Q6	0xd200
-#define INST_MASK_D5R5		0xfc00
-#define INST_MASK_D16R16	0xff00
-#define INST_MASK_H4K8		0xf000
-#define INST_MASK_NONE		0x0000
-#define INST_MASK_O7S3		0xfc00
-#define INST_MASK_O12		0xf000
-#define INST_MASK_P2K6		0xff00
-#define INST_MASK_SREG		0xff8f
-
 #define INST_ESAC_TABLE /* primary list of avr instruction translation handlers */\
 	/* NOP */\
 	INST_ESAC(0x0000,	ALL,		ALL,		nop) \
@@ -1130,7 +1132,7 @@ typedef void (*avr_inst_pfn)(
 	/* RCALL -- 0xd000 -- 1101 kkkk kkkk kkkk */\
 	INST_ESAC(0xd000,	O12,		O12,		rcall) \
 	/* LDI Rd, K aka SER (LDI r, 0xff) -- 0xe000 -- 1110 kkkk dddd kkkk */\
-	INST_ESAC(0xe000,	H4K8,		H4K8,		ldi) \
+	INST_ESAC(0xe000,	H4K8,		extend_ldi,	ldi) \
 	/* BRXS -- 0xf000 -- Branch if bit in SREG is set -- 1111 0Boo oooo osss */\
 	INST_ESAC(0xf000,	O7S3,		O7S3,		brxs) \
 	/* BRXC -- 0xf400 -- Branch if bit in SREG is clear -- 1111 0Boo oooo osss */\
@@ -1162,6 +1164,9 @@ enum { // this table provides instruction case indices
 	EXTEND_INST_ESAC(cp_cpc) \
 	EXTEND_INST_ESAC(cpse_16) \
 	EXTEND_INST_ESAC(cpse_32) \
+	EXTEND_INST_ESAC(ldi_ldi_be) \
+	EXTEND_INST_ESAC(ldi_ldi_le) \
+	EXTEND_INST_ESAC(ldi_out) \
 	EXTEND_INST_ESAC(sbic_16) \
 	EXTEND_INST_ESAC(sbic_32) \
 	EXTEND_INST_ESAC(sbis_16) \
@@ -1350,7 +1355,7 @@ INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags
 INLINE_INST_DECL(skip_if, uint16_t res, const int8_t _skip32)
 {
 	if (res) {
-		int8_t skip32 = _skip32 >= 0 ? _skip32 :
+		const int8_t skip32 = _skip32 >= 0 ? _skip32 :
 			_avr_is_instruction_32_bits(avr, *new_pc);
 			
 		if (skip32) {
@@ -2116,6 +2121,41 @@ INST_DECL(andi_ori)
 	INST_SUB_CALL(alu_common_helper, INST_OP_OR, INST_FLAG(SAVE_RESULT), h, vh, -1, ori_k);
 }
 
+INST_DECL(ldi_ldi, const uint8_t endian)
+{
+	get_R(opcode, 2, h);
+	uint16_t k = opcode & 0xffff;
+	
+	if (endian == 0) {
+		_avr_set_r16le(avr, h, k);
+	} else {
+		_avr_set_r16le_hl(avr, h, k);
+	}
+	
+	(*new_pc) += 2;
+	(*cycle)++;
+}	
+
+INST_SUB_CALL_DECL(ldi_ldi_le, ldi_ldi, 0)
+INST_SUB_CALL_DECL(ldi_ldi_be, ldi_ldi, 1)
+
+INST_DECL(ldi_out)
+{
+	get_R(opcode, 0, h);
+	get_R(opcode, 1, k);
+	
+	STATE("ldi %s, 0x%02x\n", avr_regname(h), k);
+	_avr_set_r(avr, h, k);
+
+	(*new_pc) += 2;
+	(*cycle)++;
+	
+	get_R(opcode, 2, a);
+
+	STATE("out %s, %s[%02x]\n", avr_regname(a), avr_regname(d), k);
+	_avr_set_ram(avr, a, k);
+}
+
 /*
  * begin extended instruction test definitions
  *
@@ -2213,6 +2253,36 @@ EXTEND_INST_DECL(cpse)
 	handler = xop[skip32];
 
 	return INST_OPCODE_XLAT_CALL(D5R5);
+}
+
+EXTEND_INST_DECL(ldi)
+{
+	uint8_t ldi1_h, ldi1_k;
+
+	*extend_opcode = INST_OPCODE_XLAT_CALL(get_H4K8, 0, &ldi1_h, &ldi1_k);
+
+	if (!avr->extend)
+		return *extend_opcode;
+		
+	uint8_t ldi2_h, ldi2_k;
+	int8_t res = INST_OPCODE_XLAT_CALL(get_H4K8, INST_OPCODE(ldi), &ldi2_h, &ldi2_k);
+	int8_t diff = ldi2_h - ldi1_h;
+	if (res && (1 == diff)) {
+		return *extend_opcode = _make_opcode_h8_0r16_2r8(
+			INST_OPCODE(ldi_ldi_le), ldi1_k | (ldi2_k << 8), ldi1_h);
+	} else 	if (res && (-1 == diff)) {
+		return	*extend_opcode = _make_opcode_h8_0r16_2r8(
+			INST_OPCODE(ldi_ldi_be), ldi1_k | (ldi2_k << 8), ldi1_h);
+	}
+	
+	uint8_t d, a;
+	res = INST_OPCODE_XLAT_CALL(get_D5A6, INST_OPCODE(out), &d, &a);
+	if (res && (ldi1_h == d)) {
+		return	*extend_opcode = _make_opcode_h8_0r8_1r8_2r8(
+			INST_OPCODE(ldi_out), ldi1_h, ldi1_k, d);
+	}
+
+	return *extend_opcode;
 }
 
 EXTEND_INST_DECL(sbrx)
