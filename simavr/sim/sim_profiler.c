@@ -188,9 +188,15 @@ sim_profiler_init(const char *op_names[256])
 		profile->name = name;
 
 		int skip_if = name == 0
+			|| (0 == strncmp(name, "call", 4))
 			|| (0 == strncmp(name, "cpse", 4))
 			|| (0 == strncmp(name, "brxc", 4))
 			|| (0 == strncmp(name, "brxs", 4))
+			|| (0 == strncmp(name, "icall", 5))
+			|| (0 == strncmp(name, "lcall", 5))
+			|| (0 == strncmp(name, "ljmp", 4))
+			|| (0 == strncmp(name, "rcall", 5))
+			|| (0 == strncmp(name, "rjmp", 4))
 			|| (0 == strncmp(name, "sbic", 4))
 			|| (0 == strncmp(name, "sbis", 4))
 			|| (0 == strncmp(name, "sbrc", 4))

@@ -571,11 +571,21 @@ INST_OPCODE_XLAT_DECL(A5B3)
 #define get_vd5(_xop) \
 		get_RvR(_xop, 0, d);
 
-INST_OPCODE_XLAT_DECL(D5)
+INST_OPCODE_XLAT_DECL(get_D5, uint8_t *set_d)
 {
 	get_inst_d5(opcode);
-	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, 0, 0);
+	
+	if (set_d)
+		*set_d = d;
+	
+	if (extend_opcode) {
+		return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, 0, 0);
+	} else {
+		return 0;
+	}
 }
+
+INST_OPCODE_XLAT_SUB_CALL_DECL(D5, get_D5, 0)
 
 #define get_d5_a6(_xop) \
 		get_R(_xop, 0, d); \
@@ -705,12 +715,35 @@ INST_OPCODE_XLAT_DECL(D5X16)
 		get_RvR(_xop, 0, h); \
 		get_R(_xop, 1, k);
 
-INST_OPCODE_XLAT_DECL(H4K8)
+INST_OPCODE_XLAT_DECL(get_H4K8, uint16_t test_op, uint8_t *set_h, uint8_t *set_k)
 {
 	const uint8_t h = 16 + ((opcode >> 4) & 0xf);
 	const uint8_t k = ((opcode & 0x0f00) >> 4) | (opcode & 0xf);
-	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, h, k, 0);
+	
+	int res = 0;
+
+	if (test_op) {
+		uint16_t opcode = _avr_flash_read16le(avr, new_pc);
+		res = TEST_OP(test_op, INST_MASK_H4K8);
+	}
+	
+	if ((test_op && res) || !test_op) {
+		if (set_h)
+			*set_h = h;
+	
+		if (set_k)
+			*set_k = k;
+	}
+	
+	if (!test_op && extend_opcode) {
+		return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, h, k, 0);
+	} else {
+		return res;
+	}
 }
+
+INST_OPCODE_XLAT_SUB_CALL_DECL(H4K8, get_H4K8, 0, 0, 0)
+
 
 INST_OPCODE_XLAT_DECL(NONE)
 {
@@ -869,10 +902,10 @@ _avr_flags_zcnvs (struct avr_t * avr, uint8_t res, uint8_t vr)
 }
 
 static  void
-_avr_flags_znv0s (struct avr_t * avr, uint8_t res)
+_avr_flags_znv0s (struct avr_t * avr, uint32_t res, const uint8_t bytes)
 {
 	avr->sreg[S_V] = 0;
-	_avr_flags_zns(avr, res, 1);
+	_avr_flags_zns(avr, res, bytes);
 }
 
 static inline int _avr_is_instruction_32_bits(avr_t * avr, avr_flashaddr_t pc)
@@ -995,7 +1028,7 @@ typedef void (*avr_inst_pfn)(
 	/* ORI aka SBR -- 0x6000 -- Logical OR with Immediate -- 0110 kkkk hhhh kkkk */\
 	INST_ESAC(0x6000,	H4K8,		H4K8,		ori) \
 	/* ANDI	-- 0x7000 -- Logical AND with Immediate -- 0111 kkkk hhhh kkkk */\
-	INST_ESAC(0x7000,	H4K8,		H4K8,		andi) \
+	INST_ESAC(0x7000,	H4K8,		extend_andi,	andi) \
 	/* LD (LDD) -- Load Indirect -- 10q0 qqsd dddd yqqq */\
 	INST_ESAC(0x8000,	D5rYZ_Q6,	D5rYZ_Q6,	ldd) \
 	/* ST (STD) -- Store Indirect -- 10q0 qqsd dddd yqqq */\
@@ -1123,6 +1156,9 @@ enum { // this table provides instruction case indices
 
 #define EXTEND_INST_ESAC_TABLE \
 	EXTEND_INST_ESAC(add_addc) \
+	EXTEND_INST_ESAC(andi_andi) \
+	EXTEND_INST_ESAC(andi_or) \
+	EXTEND_INST_ESAC(andi_ori) \
 	EXTEND_INST_ESAC(cp_cpc) \
 	EXTEND_INST_ESAC(cpse_16) \
 	EXTEND_INST_ESAC(cpse_32) \
@@ -1294,7 +1330,7 @@ INLINE_INST_DECL(alu_common_helper, const uint8_t operation, const uint8_t flags
 		case INST_OP_AND:
 		case INST_OP_EOR:
 		case INST_OP_OR:
-			_avr_flags_znv0s(avr, res);
+			_avr_flags_znv0s(avr, res, bytes);
 			break;
 		case INST_OP_NONE:
 			break;
@@ -1717,6 +1753,13 @@ INLINE_INST_DECL(h4k8_common_helper, const uint8_t operation, const uint8_t flag
 	INST_SUB_CALL(alu_common_helper, operation, flags, h, vh, -1, k);
 }
 
+INLINE_INST_DECL(h4k16_common_helper, const uint8_t operation, const uint8_t flags)
+{
+	get_RvR16le(opcode, 2, h);
+	uint16_t k = opcode & 0xffff;
+	INST_SUB_CALL(alu_common_helper, operation, flags, h, vh, -1, k);
+}
+
 /*
  * end common code, begin specialized instruction handlers
  *
@@ -1772,7 +1815,7 @@ INST_DECL(com)
 	uint8_t res = 0xff - vd;
 	STATE("com %s[%02x] = %02x\n", avr_regname(d), vd, res);
 	_avr_set_r(avr, d, res);
-	_avr_flags_znv0s(avr, res);
+	_avr_flags_znv0s(avr, res, 1);
 	avr->sreg[S_C] = 1;
 	SREG();
 }
@@ -2040,6 +2083,40 @@ INST_DECL(wdr)
 }
 
 /*
+ * begin extended instruction definitions
+ */
+
+INST_SUB_CALL_DECL(andi_andi, h4k16_common_helper, INST_OP_AND, INST_FLAG(16Bit) | INST_FLAG(SAVE_RESULT))
+
+INST_DECL(andi_or)
+{
+	get_RvR(opcode, 0, h);
+	get_R(opcode, 1, andi_k);
+
+	INST_SUB_CALL(alu_common_helper, INST_OP_AND, INST_FLAG(SAVE_RESULT), h, vh, -1, andi_k);
+	*new_pc += 2;
+	(*cycle)++;
+	
+	get_RvR(opcode, 2, d);
+
+	INST_SUB_CALL(alu_common_helper, INST_OP_OR, INST_FLAG(SAVE_RESULT), h, vh, d, vd);
+}
+
+INST_DECL(andi_ori)
+{
+	get_RvR(opcode, 0, h);
+	get_R(opcode, 1, andi_k);
+
+	INST_SUB_CALL(alu_common_helper, INST_OP_AND, INST_FLAG(SAVE_RESULT), h, vh, -1, andi_k);
+	*new_pc += 2;
+	(*cycle)++;
+	
+	get_R(opcode, 2, ori_k);
+
+	INST_SUB_CALL(alu_common_helper, INST_OP_OR, INST_FLAG(SAVE_RESULT), h, vh, -1, ori_k);
+}
+
+/*
  * begin extended instruction test definitions
  *
  * instructions which alter cycle timing accuracy
@@ -2077,13 +2154,48 @@ EXTEND_INST_DECL(add)
 	return *extend_opcode;
 }
 
+EXTEND_INST_DECL(andi)
+{
+	uint8_t andi1_h, andi1_k;
+
+	*extend_opcode = INST_OPCODE_XLAT_CALL(get_H4K8, 0, &andi1_h, &andi1_k);
+
+	if (!avr->extend)
+		return *extend_opcode;
+	
+	uint8_t andi2_h, andi2_k;
+	int res = INST_OPCODE_XLAT_CALL(get_H4K8, INST_OPCODE(andi), &andi2_h, &andi2_k);
+	if (res && (1 == (andi2_h - andi1_h))) {
+		return *extend_opcode = _make_opcode_h8_0r16_2r8(
+			INST_OPCODE(andi_andi), andi1_k | (andi2_k << 8), andi1_h);
+	}
+		
+	uint8_t or_d, or_r;
+	res = INST_OPCODE_XLAT_CALL(get_D5R5, INST_OPCODE(or), &or_d, &or_r);
+	if (res && (andi1_h == or_d)) {
+		return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(
+			INST_OPCODE(andi_or), andi1_h, andi1_k, or_r);
+	}
+	
+	uint8_t ori_h, ori_k;
+	res = INST_OPCODE_XLAT_CALL(get_H4K8, INST_OPCODE(ori), &ori_h, &ori_k);
+	if (res && (andi1_h == ori_h)) {
+		return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(
+			INST_OPCODE(andi_ori), andi1_h, andi1_k, ori_k);
+	}
+
+	return *extend_opcode;
+}
+
 EXTEND_INST_DECL(cp)
 {
 	uint8_t d, r;
-	*extend_opcode = INST_OPCODE_XLAT_CALL(get_D5R5, &d, &r);
+	*extend_opcode = INST_OPCODE_XLAT_CALL(get_D5R5, 0, &d, &r);
 	
 	if (avr->extend) {
-		if (_extend_test_d5_r5_is16(avr, new_pc, INST_OPCODE(cpc), d, r)) {
+		uint8_t d_h, r_h;
+		int res = INST_OPCODE_XLAT_CALL(get_D5R5, INST_OPCODE(cpc), &d_h, &r_h);
+		if(res && _test_d5r5_is16le(d, r, d_h, r_h)) {
 			*extend_opcode = _make_opcode_h8_0r8_1r8_2r8(INST_OPCODE(cp_cpc), d, r, 0);
 		}
 	}

@@ -24,7 +24,7 @@
 
 #define CONFIG_PROFILER_ACTIVE 1
 
-static uint8_t __attribute__ ((__unused__)) _sim_profiler_active = CONFIG_PROFILER_ACTIVE;
+static const uint8_t __attribute__ ((__unused__)) _sim_profiler_active = CONFIG_PROFILER_ACTIVE;
 
 #ifdef __cplusplus
 extern "C" {
