@@ -1772,7 +1772,6 @@ INLINE_INST_DECL(h4k16_common_helper, const uint8_t operation, const uint8_t fla
  */
 
 INST_SUB_CALL_DECL(add, d5r5_common_helper, INST_OP_ADD, INST_FLAG(SAVE_RESULT))
-INST_SUB_CALL_DECL(add_addc, d5r5_common_helper, INST_OP_ADD, INST_FLAG(16Bit) | INST_FLAG(SAVE_RESULT))
 INST_SUB_CALL_DECL(addc, d5r5_common_helper, INST_OP_ADD, INST_FLAG(CARRY) | INST_FLAG(SAVE_RESULT))
 
 INST_AS_OPCODE_SUB_CALL_DECL(adiw, adiw_sbiw)
@@ -2090,6 +2089,8 @@ INST_DECL(wdr)
 /*
  * begin extended instruction definitions
  */
+
+INST_SUB_CALL_DECL(add_addc, d5r5_common_helper, INST_OP_ADD, INST_FLAG(16Bit) | INST_FLAG(SAVE_RESULT))
 
 INST_SUB_CALL_DECL(andi_andi, h4k16_common_helper, INST_OP_AND, INST_FLAG(16Bit) | INST_FLAG(SAVE_RESULT))
 
