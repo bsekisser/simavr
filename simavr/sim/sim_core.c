@@ -571,21 +571,11 @@ INST_OPCODE_XLAT_DECL(A5B3)
 #define get_vd5(_xop) \
 		get_RvR(_xop, 0, d);
 
-INST_OPCODE_XLAT_DECL(get_D5, uint8_t *set_d)
+INST_OPCODE_XLAT_DECL(D5)
 {
 	get_inst_d5(opcode);
-	
-	if (set_d)
-		*set_d = d;
-	
-	if (extend_opcode) {
-		return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, 0, 0);
-	} else {
-		return 0;
-	}
+	return *extend_opcode = _make_opcode_h8_0r8_1r8_2r8(handler, d, 0, 0);
 }
-
-INST_OPCODE_XLAT_SUB_CALL_DECL(D5, get_D5, 0)
 
 #define get_d5_a6(_xop) \
 		get_R(_xop, 0, d); \
