@@ -282,7 +282,7 @@ avr_timer_tcnt_write(
 static void
 avr_timer_configure(
 		avr_timer_t * p,
-		uint32_t clock,
+		float clock,
 		uint32_t top)
 {
 	float t = clock / (float)(top+1);
@@ -305,7 +305,7 @@ avr_timer_configure(
 
 		p->comp[compi].comp_cycles = 0;
 		if (p->trace & (avr_timer_trace_compa << compi))
-			printf("%s-%c clock %d top %d OCR%c %d\n", __FUNCTION__, p->name, clock, top, 'A'+compi, ocr);
+			printf("%s-%c clock %.2f top %d OCR%c %d\n", __FUNCTION__, p->name, clock, top, 'A'+compi, ocr);
 
 		if (ocr && ocr <= top) {
 			p->comp[compi].comp_cycles = frequency / fc; // avr_hz_to_cycles(p->io.avr, fa);
@@ -450,7 +450,7 @@ avr_timer_write(
 					__func__, p->name);
 			return;
 		}
-		p->cs_div_clock = clock >> p->cs_div[new_cs];
+		p->cs_div_clock = (float)clock / (1 << p->cs_div[new_cs]);
 
 	/* mode */
 		p->mode = p->wgm_op[new_mode];
