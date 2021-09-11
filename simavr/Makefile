@@ -18,8 +18,7 @@
 
 SHELL 			:= ${shell which bash}
 SIMAVR_VERSION	:= ${shell \
-	{ git log -1 --tags --simplify-by-decoration --pretty="format:%d"|\
-		sed -e 's/[\(\) ]//g'; } || \
+	git describe --abbrev=0 --tags || \
 	echo "unknown" }
 SIMAVR_REVISION	= 2
 
@@ -43,41 +42,23 @@ sim_o 	:= ${patsubst sim/%.c, ${OBJ}/%.o, ${sim}}
 VPATH	= cores
 VPATH	+= sim
 
-IPATH	= sim
+IPATH	+= sim
 IPATH	+= .
 IPATH	+= ../../shared
-    
+
 #
 # Static library
 #
 ${OBJ}/libsimavr.a	:	${sim_o}
-ifeq ($(V),1)
-	$(AR) cru $@ $^ && $(RANLIB) $@
-else
-	@echo AR $@
-	@$(AR) cru $@ $^ && $(RANLIB) $@
-endif
 
-#
-# Shared library (Linux)
-#
-${OBJ}/libsimavr.so.1	:	${sim_o}
-ifeq ($(V),1)
-	$(CC) -shared -Wl,-soname,libsimavr.so.1 -o $@ $^
-else
-	@echo SHARED $@
-	@$(CC) -shared -Wl,-soname,libsimavr.so.1 -o $@ $^
-endif
-
-${OBJ}/libsimavr.so		: ${OBJ}/libsimavr.so.1
-	ln -sf libsimavr.so.1 $@
 
 libsimavr	: config ${OBJ}/libsimavr.a
 # shared library won't work that easily on non-linux
 ifeq (${shell uname}, Linux)
-libsimavr	:	${OBJ}/libsimavr.so
+libsimavr	: ${OBJ}/libsimavr.so
 endif
 
+${OBJ}/${target}.elf	: libsimavr
 ${OBJ}/${target}.elf	: ${OBJ}/${target}.o
 
 ${target}	: ${OBJ}/${target}.elf
@@ -88,13 +69,10 @@ ${target}	: ${OBJ}/${target}.elf
 #else
 	ln -sf $< $@
 #endif
- 
+
 clean: clean-${OBJ}
 	rm -rf ${target} *.a *.so *.exe
 	rm -f sim_core_*.h
-
-DESTDIR = /usr/local
-PREFIX = ${DESTDIR}
 
 install : all
 	$(MKDIR) $(DESTDIR)/include/simavr/avr
@@ -119,7 +97,7 @@ endif
 # This generates 'mock' debian files, without all the policy, scripts
 # and all the things normal debian requires. If debian decides to roll
 # in simavr officialy, this section shall diseapear
-debian: 
+debian:
 	rm -rf /tmp/simavr-tmp && mkdir -p /tmp/simavr-tmp/usr && \
 	make cleam; make install DESTDIR=/tmp/simavr-tmp/usr RELEASE=1 && \
 	(cd /tmp/simavr-tmp && \
@@ -165,8 +143,8 @@ sim_core_config.h ${OBJ}/cores.deps: $(cores) Makefile
 			conf+="#define CONFIG_$$upper 1\n"; \
 			obj=$${file/.c/.o} ; obj=$${obj/cores\/}; \
 			printf "\$${OBJ}/libsimavr.a: \$${OBJ}/$$obj\n">>${OBJ}/cores.deps ; \
-			printf "\$${OBJ}/libsimavr.so.1: \$${OBJ}/$$obj\n">>${OBJ}/cores.deps ; \
 		else \
+			conf+="#undef CONFIG_$$upper\n"; \
 			echo WARNING $$file did not compile, check your avr-gcc toolchain; \
 		fi \
 	done ; \
@@ -181,14 +159,14 @@ sim_core_config.h ${OBJ}/cores.deps: $(cores) Makefile
 # This take the config file that was generated, and create the static
 # table of all available cores for name lookups, as well as a C
 # config file
-#  
+#
 sim_core_decl.h: sim_core_config.h $(cores) Makefile
 	@echo CONF $@
 	@decl=""; array=""; \
 	for core in $$(grep -r avr_kind_t cores/|awk -F '[ :]' '{print $$1 "=" $$3;}') ; do \
 		file=$${core/=*}; global=$${core/*=}; \
-		upper=$${file/cores\/sim_}; upper=$${upper/.c}; \
-		upper=$$(echo $$upper|tr '[a-z]' '[A-Z]'); \
+		upper=$$global; upper=$${upper/.c}; \
+		upper=$$(echo $$global|tr '[a-z]' '[A-Z]'); \
 		decl+="#if CONFIG_$$upper\nextern avr_kind_t $$global;\n#endif\n"; \
 		array+="#if CONFIG_$$upper\n\t&$$global,\n#endif\n"; \
 	done ; \

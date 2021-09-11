@@ -53,7 +53,7 @@ extern "C" {
 		void myfifo_write_at(myfifo_t *c, uint16_t o, uint8_t b);
 
 	In your .c you need to 'implement' the fifo:
-	DEFINE_FIFO(uint8_t, myfifo, 128)
+	DEFINE_FIFO(uint8_t, myfifo)
 
 	To use the fifo, you must declare at least one :
 	myfifo_t fifo = FIFO_NULL;
@@ -155,7 +155,7 @@ FIFO_DECL FIFO_INLINE FIFO_CURSOR_TYPE __name##_get_read_size(__name##_t *c)\
 }\
 FIFO_DECL FIFO_INLINE FIFO_CURSOR_TYPE __name##_get_write_size(__name##_t *c)\
 {\
-	return __name##_fifo_size - __name##_get_read_size(c);\
+	return (__name##_fifo_size-1) - __name##_get_read_size(c);\
 }\
 FIFO_DECL FIFO_INLINE void __name##_read_offset(__name##_t *c, FIFO_CURSOR_TYPE o)\
 {\

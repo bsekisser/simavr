@@ -19,10 +19,6 @@
 	along with simavr.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/*
-	PATCH 20130523; bsekisser - patched for core versions 2 and 3.
-*/
-
 #ifndef __SIM_CORE_H__
 #define __SIM_CORE_H__
 
@@ -32,8 +28,8 @@ extern "C" {
 
 #ifdef NO_COLOR
 	#define FONT_GREEN
-	#define FONT_RED		
-	#define FONT_DEFAULT	
+	#define FONT_RED
+	#define FONT_DEFAULT
 #else
 	#define FONT_GREEN		"\e[32m"
 	#define FONT_RED		"\e[31m"
@@ -44,9 +40,6 @@ extern "C" {
  * Instruction decoder, run ONE instruction
  */
 avr_flashaddr_t avr_run_one(avr_t * avr);
-avr_flashaddr_t avr_run_one_v2(avr_t * avr);
-avr_flashaddr_t avr_run_one_v3(avr_t * avr);
-
 
 /*
  * These are for internal access to the stack (for interrupts)
@@ -62,8 +55,8 @@ int _avr_push_addr(avr_t * avr, avr_flashaddr_t addr);
  */
 const char * avr_regname(uint8_t reg);
 
-/* 
- * DEBUG bits follow 
+/*
+ * DEBUG bits follow
  * These will disappear when gdb arrives
  */
 void avr_dump_state(avr_t * avr);
@@ -95,7 +88,7 @@ void avr_dump_state(avr_t * avr);
 #define DUMP_STACK()
 #define DUMP_REG();
 
-#endif 
+#endif
 
 /**
  * Reconstructs the SREG value from avr->sreg into dst.
@@ -109,13 +102,38 @@ void avr_dump_state(avr_t * avr);
 					dst |= (1 << i); \
 		}
 
+static inline void avr_sreg_set(avr_t * avr, uint8_t flag, uint8_t ival)
+{
+	/*
+	 *	clear interrupt_state if disabling interrupts.
+	 *	set wait if enabling interrupts.
+	 *	no change if interrupt flag does not change.
+	 */
+
+	if (flag == S_I) {
+		if (ival) {
+			if (!avr->sreg[S_I])
+				avr->interrupt_state = -1;
+		} else
+			avr->interrupt_state = 0;
+	}
+
+	avr->sreg[flag] = ival;
+}
+
 /**
  * Splits the SREG value from src into the avr->sreg array.
  */
 #define SET_SREG_FROM(avr, src) { \
 			for (int i = 0; i < 8; i++) \
-				avr->sreg[i] = (src & (1 << i)) != 0; \
+				avr_sreg_set(avr, i, (src & (1 << i)) != 0); \
 		}
+
+/*
+ * Opcode is sitting at the end of the flash to catch PC overflows.
+ * Apparently it's used by some code to simulate soft reset?
+ */
+#define AVR_OVERFLOW_OPCODE 0xf1f1
 
 #ifdef __cplusplus
 };

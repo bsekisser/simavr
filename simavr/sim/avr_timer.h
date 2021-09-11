@@ -39,6 +39,8 @@ enum {
 enum {
 	TIMER_IRQ_OUT_PWM0 = 0,
 	TIMER_IRQ_OUT_PWM1,
+	TIMER_IRQ_OUT_PWM2,
+	TIMER_IRQ_IN_ICP,	// input capture
 	TIMER_IRQ_OUT_COMP,	// comparator pins output IRQ
 
 	TIMER_IRQ_COUNT = TIMER_IRQ_OUT_COMP + AVR_TIMER_COMP_COUNT
@@ -46,6 +48,13 @@ enum {
 
 // Get the internal IRQ corresponding to the INT
 #define AVR_IOCTL_TIMER_GETIRQ(_name) AVR_IOCTL_DEF('t','m','r',(_name))
+
+// add timer number/name (character) to set tracing flags
+#define AVR_IOCTL_TIMER_SET_TRACE(_number) AVR_IOCTL_DEF('t','m','t',(_number))
+// enforce using virtual clock generator when external clock is chosen by firmware
+#define AVR_IOCTL_TIMER_SET_VIRTCLK(_number) AVR_IOCTL_DEF('t','m','v',(_number))
+// set frequency of the virtual clock generator
+#define AVR_IOCTL_TIMER_SET_FREQCLK(_number) AVR_IOCTL_DEF('t','m','f',(_number))
 
 // Waveform generation modes
 enum {
@@ -63,7 +72,7 @@ enum {
 	avr_timer_com_toggle,   // Toggle OCnx on compare match
 	avr_timer_com_clear,    // clear OCnx on compare match
 	avr_timer_com_set,      // set OCnx on compare match
-	
+
 };
 
 enum {
@@ -71,9 +80,18 @@ enum {
 	avr_timer_wgm_reg_ocra,
 	avr_timer_wgm_reg_icr,
 };
+
 typedef struct avr_timer_wgm_t {
 	uint32_t top: 8, bottom: 8, size : 8, kind : 8;
 } avr_timer_wgm_t;
+
+#define AVR_TIMER_EXTCLK_CHOOSE 0x80		// marker value for cs_div specifying ext clock selection
+#define AVR_TIMER_EXTCLK_FLAG_TN 0x80		// Tn external clock chosen
+#define AVR_TIMER_EXTCLK_FLAG_STARTED 0x40	// peripheral started
+#define AVR_TIMER_EXTCLK_FLAG_REVDIR 0x20	// reverse counting (decrement)
+#define AVR_TIMER_EXTCLK_FLAG_AS2 0x10		// asynchronous external clock chosen
+#define AVR_TIMER_EXTCLK_FLAG_VIRT 0x08		// don't use the input pin, generate clock internally
+#define AVR_TIMER_EXTCLK_FLAG_EDGE 0x01		// use the rising edge
 
 #define AVR_TIMER_WGM_NORMAL8() { .kind = avr_timer_wgm_normal, .size=8 }
 #define AVR_TIMER_WGM_NORMAL16() { .kind = avr_timer_wgm_normal, .size=16 }
@@ -87,6 +105,7 @@ typedef struct avr_timer_wgm_t {
 #define AVR_TIMER_WGM_FCPWM10() { .kind = avr_timer_wgm_fc_pwm, .size=10 }
 #define AVR_TIMER_WGM_OCPWM() { .kind = avr_timer_wgm_pwm, .top = avr_timer_wgm_reg_ocra }
 #define AVR_TIMER_WGM_ICPWM() { .kind = avr_timer_wgm_pwm, .top = avr_timer_wgm_reg_icr }
+#define AVR_TIMER_WGM_ICFASTPWM() { .kind = avr_timer_wgm_fast_pwm, .top = avr_timer_wgm_reg_icr }
 
 typedef struct avr_timer_comp_t {
 		avr_int_vector_t	interrupt;		// interrupt vector
@@ -95,12 +114,23 @@ typedef struct avr_timer_comp_t {
 		avr_io_addr_t		r_ocrh;			// comparator register hi byte
 		avr_regbit_t		com;			// comparator output mode registers
 		avr_regbit_t		com_pin;		// where comparator output is connected
-		uint64_t		comp_cycles;
+		uint64_t			comp_cycles;
+                avr_regbit_t            foc;                    // "force compare match" strobe
 } avr_timer_comp_t, *avr_timer_comp_p;
 
+enum {
+	avr_timer_trace_ocr		= (1 << 0),
+	avr_timer_trace_tcnt	= (1 << 1),
+
+	avr_timer_trace_compa 	= (1 << 8),
+	avr_timer_trace_compb 	= (1 << 9),
+	avr_timer_trace_compc 	= (1 << 10),
+};
+
 typedef struct avr_timer_t {
-	avr_io_t	io;
-	char name;
+	avr_io_t		io;
+	char 			name;
+	uint32_t		trace;		// debug trace
 
 	avr_regbit_t	disabled;	// bit in the PRR
 
@@ -109,10 +139,19 @@ typedef struct avr_timer_t {
 
 	avr_regbit_t	wgm[4];
 	avr_timer_wgm_t	wgm_op[16];
+	avr_timer_wgm_t	mode;
+	int				wgm_op_mode_kind;
+	uint32_t		wgm_op_mode_size;
 
-	avr_regbit_t	cs[4];
-	uint8_t			cs_div[16];
 	avr_regbit_t	as2;		// asynchronous clock 32khz
+	avr_regbit_t	cs[4];		// specify control register bits choosing clock sourcre
+	uint8_t			cs_div[16];	// translate control register value to clock prescaler (orders of 2 exponent)
+	uint32_t		cs_div_value;
+
+	avr_regbit_t	ext_clock_pin;	// external clock input pin, to link IRQs
+	uint8_t			ext_clock_flags;	// holds AVR_TIMER_EXTCLK_FLAG_ON, AVR_TIMER_EXTCLK_FLAG_EDGE and other ext. clock mode flags
+	float			ext_clock;	// external clock frequency, e.g. 32768Hz
+
 	avr_regbit_t	icp;		// input capture pin, to link IRQs
 	avr_regbit_t	ices;		// input capture edge select
 
@@ -121,9 +160,10 @@ typedef struct avr_timer_t {
 	avr_int_vector_t overflow;	// overflow
 	avr_int_vector_t icr;	// input capture
 
-	avr_timer_wgm_t	mode;
-	uint64_t		tov_cycles;
-	uint64_t		tov_base;	// when we last were called
+	uint64_t		tov_cycles;	// number of cycles from zero to overflow
+	float			tov_cycles_fract; // fractional part for external clock with non int ratio to F_CPU
+	float			phase_accumulator;
+	uint64_t		tov_base;	// MCU cycle when the last overflow occured; when clocked externally holds external clock count
 	uint16_t		tov_top;	// current top value to calculate tnct
 } avr_timer_t;
 

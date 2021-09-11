@@ -80,6 +80,27 @@ enum {
 	ADC_VREF_V256	= 2560,
 };
 
+// ADC trigger sources
+typedef enum {
+	avr_adts_none = 0,
+	avr_adts_free_running,
+	avr_adts_analog_comparator_0,
+	avr_adts_analog_comparator_1,
+	avr_adts_analog_comparator_2,
+	avr_adts_analog_comparator_3,
+	avr_adts_external_interrupt_0,
+	avr_adts_timer_0_compare_match_a,
+	avr_adts_timer_0_compare_match_b,
+	avr_adts_timer_0_overflow,
+	avr_adts_timer_1_compare_match_b,
+	avr_adts_timer_1_overflow,
+	avr_adts_timer_1_capture_event,
+	avr_adts_pin_change_interrupt,
+	avr_adts_psc_module_0_sync_signal,
+	avr_adts_psc_module_1_sync_signal,
+	avr_adts_psc_module_2_sync_signal,
+} avr_adts_type;
+
 typedef struct avr_adc_t {
 	avr_io_t		io;
 
@@ -101,21 +122,40 @@ typedef struct avr_adc_t {
 	uint8_t			r_adcl, r_adch;	// Data Registers
 
 	uint8_t			r_adcsrb;	// ADC Control and Status Register B
-	avr_regbit_t	adts[3];	// Timing Source
+	avr_regbit_t	adts[4];	// Timing Source
+	avr_adts_type	adts_op[16];    // ADTS type
+	uint8_t		adts_mode;      // the extracted ADTS mode
 	avr_regbit_t 	bin;		// Bipolar Input Mode (tinyx5 have it)
 	avr_regbit_t 	ipr;		// Input Polarity Reversal (tinyx5 have it)
 
 	// use ADIF and ADIE bits
 	avr_int_vector_t adc;
 
-	/*
+	avr_adc_mux_t	muxmode[64];    // maximum 6 bits of mux modes
+
+        /*
 	 * runtime bits
 	 */
-	avr_adc_mux_t	muxmode[64];// maximum 6 bits of mux modes
-	uint16_t		adc_values[8];	// current values on the ADCs
+
+	uint16_t		adc_values[16];	// current values on the ADCs
 	uint16_t		temp;		// temp sensor reading
 	uint8_t			first;
 	uint8_t			read_status;	// marked one when adcl is read
+
+        /* Conversion parameters saved at start (ADSC is set). */
+
+        uint8_t                 current_muxi;
+        uint8_t                 current_refi;
+        uint8_t                 current_prescale;
+        struct {
+                unsigned int bipolar : 1;      // BIN bit.
+                unsigned int negate : 1;       // IPR bit.
+                unsigned int adjust : 1;       // ADLAR bit.
+        }                       current_extras;
+
+        /* Buffered conversion result. */
+
+        uint16_t                result;
 } avr_adc_t;
 
 void avr_adc_init(avr_t * avr, avr_adc_t * port);

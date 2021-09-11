@@ -27,18 +27,25 @@
 
 #include <stdint.h>
 
+#ifdef ARDUIDIO_FULL
 typedef struct ardupin_t {
-	uint32_t port : 7, pin : 3, analog : 1, adc : 3, pwm : 1, ardupin;
+	uint32_t port : 4, pin : 3, analog : 1, adc : 4, pwm : 1, ardupin;
 } ardupin_t, *ardupin_p;
+#else
+typedef struct ardupin_t {
+	uint8_t port : 4, pin : 3;
+} ardupin_t, *ardupin_p;
+#endif
 
 struct avr_t;
 
 struct avr_irq_t *
 get_ardu_irq(
 		struct avr_t * avr,
-		int ardupin,
-		ardupin_t pins[]);
+		uint8_t ardupin,
+		const ardupin_t pins[]);
 
-extern ardupin_t arduidiot_644[32];
+extern const ardupin_t arduidiot_644[];
+extern const ardupin_t arduidiot_2560[];
 
 #endif

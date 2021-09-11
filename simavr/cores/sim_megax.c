@@ -32,13 +32,13 @@ void mx_init(struct avr_t * avr)
 	avr_flash_init(avr, &mcu->selfprog);
 	avr_watchdog_init(avr, &mcu->watchdog);
 	avr_extint_init(avr, &mcu->extint);
-#ifdef PORTA
+	// we try to initialize this one, in case it's declared
 	avr_ioport_init(avr, &mcu->porta);
-#endif
 	avr_ioport_init(avr, &mcu->portb);
 	avr_ioport_init(avr, &mcu->portc);
 	avr_ioport_init(avr, &mcu->portd);
 	avr_uart_init(avr, &mcu->uart);
+	avr_acomp_init(avr, &mcu->acomp);
 	avr_adc_init(avr, &mcu->adc);
 	avr_timer_init(avr, &mcu->timer0);
 	avr_timer_init(avr, &mcu->timer1);

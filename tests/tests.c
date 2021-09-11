@@ -16,10 +16,7 @@ int tests_disable_stdout = 1;
 static char *test_name = "(uninitialized test)";
 static int finished = 0;
 
-#ifdef __MINGW32__
-#define restore_stderr()	{}
-#define map_stderr()		{}
-#else
+#if defined(__GLIBC__) && !defined(__MINGW32__)
 static FILE *orig_stderr = NULL;
 #define restore_stderr()	{ if (orig_stderr) stderr = orig_stderr; }
 #define map_stderr()		{ if (tests_disable_stdout) { \
@@ -27,8 +24,11 @@ static FILE *orig_stderr = NULL;
 								fclose(stdout);			\
 								stderr = stdout;		\
 							} }
+#else
+#define restore_stderr()	{}
+#define map_stderr()		{}
 #endif
-		
+
 static void atexit_handler(void) {
 	if (!finished)
 		_fail(NULL, 0, "Test exit without indicating success.");
@@ -69,12 +69,6 @@ static int my_avr_run(avr_t * avr)
 	if (avr->state == cpu_Running)
 		new_pc = avr_run_one(avr);
 
-	// if we just re-enabled the interrupts...
-	// double buffer the I flag, to detect that edge
-	if (avr->sreg[S_I] && !avr->i_shadow)
-		avr->interrupts.pending_wait++;
-	avr->i_shadow = avr->sreg[S_I];
-
 	// run the cycle timers, get the suggested sleep time
 	// until the next timer is due
 	avr_cycle_count_t sleep = avr_cycle_timer_process(avr);
@@ -99,7 +93,7 @@ static int my_avr_run(avr_t * avr)
 	// Interrupt servicing might change the PC too, during 'sleep'
 	if (avr->state == cpu_Running || avr->state == cpu_Sleeping)
 		avr_service_interrupts(avr);
-	
+
 	// if we were stepping, use this state to inform remote gdb
 
 	return avr->state;
@@ -108,7 +102,7 @@ static int my_avr_run(avr_t * avr)
 avr_t *tests_init_avr(const char *elfname) {
 	tests_cycle_count = 0;
 	map_stderr();
-	
+
 	elf_firmware_t fw;
 	if (elf_read_firmware(elfname, &fw))
 		fail("Failed to read ELF firmware \"%s\"", elfname);
@@ -127,7 +121,7 @@ int tests_run_test(avr_t *avr, unsigned long run_usec) {
 	// assert that the simulation has not finished before that.
 	jmp_buf jmp;
 	special_deinit_jmpbuf = &jmp;
-	avr->special_deinit = special_deinit_longjmp_cb;
+	avr->custom.deinit = special_deinit_longjmp_cb;
 	avr_cycle_timer_register_usec(avr, run_usec,
 				      cycle_timer_longjmp_cb, &jmp);
 	int reason = setjmp(jmp);
@@ -144,7 +138,7 @@ int tests_run_test(avr_t *avr, unsigned long run_usec) {
 		return reason;
 	}
 	fail("Error in test case: Should never reach this.");
-	return 0;	
+	return 0;
 }
 
 int tests_init_and_run_test(const char *elfname, unsigned long run_usec) {
@@ -159,8 +153,8 @@ struct output_buffer {
 	int maxlen;
 };
 
-/* static void buf_output_cb(avr_t *avr, avr_io_addr_t addr, uint8_t v, */
-/* 			  void *param) { */
+/* Callback for receiving data via an IRQ. */
+
 static void buf_output_cb(struct avr_irq_t *irq, uint32_t value, void *param) {
 	struct output_buffer *buf = param;
 	if (!buf)
@@ -177,12 +171,41 @@ static void buf_output_cb(struct avr_irq_t *irq, uint32_t value, void *param) {
 	buf->str[buf->currlen] = 0;
 }
 
+/* Callback for receiving data directly from a register,
+ * after calling avr_register_io_write().
+ */
+
+static void reg_output_cb(struct avr_t *avr, avr_io_addr_t addr,
+                          uint8_t v, void *param)
+{
+    buf_output_cb(NULL, v, param);
+}
+
 static void init_output_buffer(struct output_buffer *buf) {
 	buf->str = malloc(128);
 	buf->str[0] = 0;
 	buf->currlen = 0;
 	buf->alloclen = 128;
 	buf->maxlen = 4096;
+}
+
+static void tests_assert_xxxx_receive_avr(avr_t                *avr,
+                                          unsigned long         run_usec,
+                                          struct output_buffer *buf,
+                                          const char           *expected)
+{
+	enum tests_finish_reason reason = tests_run_test(avr, run_usec);
+
+	if (reason == LJR_CYCLE_TIMER) {
+		if (strcmp(buf->str, expected) == 0) {
+			_fail(NULL, 0, "Simulation did not finish within %lu simulated usec. "
+			     "Output is correct and complete.", run_usec);
+		}
+		_fail(NULL, 0, "Simulation did not finish within %lu simulated usec. "
+		     "Output so far: \"%s\"", run_usec, buf->str);
+	}
+	if (strcmp(buf->str, expected) != 0)
+		_fail(NULL, 0, "Outputs differ: expected \"%s\", got \"%s\"", expected, buf->str);
 }
 
 void tests_assert_uart_receive_avr(avr_t *avr,
@@ -192,19 +215,10 @@ void tests_assert_uart_receive_avr(avr_t *avr,
 	struct output_buffer buf;
 	init_output_buffer(&buf);
 
-	avr_irq_register_notify(avr_io_getirq(avr, AVR_IOCTL_UART_GETIRQ(uart), UART_IRQ_OUTPUT),
-				buf_output_cb, &buf);
-	enum tests_finish_reason reason = tests_run_test(avr, run_usec);
-	if (reason == LJR_CYCLE_TIMER) {
-		if (strcmp(buf.str, expected) == 0) {
-			_fail(NULL, 0, "Simulation did not finish within %lu simulated usec. "
-			     "UART output is correct and complete.", run_usec);
-		}
-		_fail(NULL, 0, "Simulation did not finish within %lu simulated usec. "
-		     "UART output so far: \"%s\"", run_usec, buf.str);
-	}
-	if (strcmp(buf.str, expected) != 0)
-		_fail(NULL, 0, "UART outputs differ: expected \"%s\", got \"%s\"", expected, buf.str);
+	avr_irq_register_notify(
+                avr_io_getirq(avr, AVR_IOCTL_UART_GETIRQ(uart),
+                              UART_IRQ_OUTPUT), buf_output_cb, &buf);
+        tests_assert_xxxx_receive_avr(avr, run_usec, &buf, expected);
 }
 
 void tests_assert_uart_receive(const char *elfname,
@@ -217,6 +231,28 @@ void tests_assert_uart_receive(const char *elfname,
 			       run_usec,
 			       expected,
 			       uart);
+}
+
+void tests_assert_register_receive_avr(avr_t         *avr,
+                                       unsigned long  run_usec,
+                                       const char    *expected,
+                                       avr_io_addr_t  reg_addr)
+{
+	struct output_buffer buf;
+
+	init_output_buffer(&buf);
+        avr_register_io_write(avr, reg_addr, reg_output_cb, &buf);
+	tests_assert_xxxx_receive_avr(avr, run_usec, &buf, expected);
+}
+
+void tests_assert_register_receive(const char    *elfname,
+                                   unsigned long  run_usec,
+                                   const char    *expected,
+                                   avr_io_addr_t  reg_addr)
+{
+	avr_t *avr = tests_init_avr(elfname);
+
+        tests_assert_register_receive_avr(avr, run_usec, expected, reg_addr);
 }
 
 void tests_assert_cycles_at_least(unsigned long n) {

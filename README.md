@@ -10,6 +10,21 @@ simulator loads ELF files directly, and there is even a way to specify simulatio
 parameters directly in the emulated code using an .elf section. You can also 
 load multipart HEX files.
 
+Installation
+------------
+On OSX, we recommend using [homebrew](https://brew.sh):
+
+    brew tap osx-cross/avr
+    brew install --HEAD simavr
+
+On Ubuntu, SimAVR is available in the Bionic package source:
+
+    apt-get install simavr
+
+(Note that the command is made available under the name `simavr` not `run_avr`.)
+
+Otherwise, `make` is enough to just start using __bin/simavr__. To install the __simavr__ command system-wide, `make install RELEASE=1`.
+
 Supported IOs
 --------------
 * _eeprom_
@@ -25,17 +40,22 @@ Supported IOs
 
 Emulated Cores (very easy to add new ones!)
 --------------
++ ATMega2560
 + AT90USB162 (with USB!)
++ ATMega1281
 + ATMega1280
 + ATMega128
++ ATMega128rf1
 + ATMega16M1
++ ATMega169
++ ATMega162
 + ATMega164/324/644
 + ATMega48/88/168/328
-+ ATMega8
++ ATMega8/16/32
 + ATTiny25/45/85
 + ATTIny44/84
-+ ATTiny2313
-+ ATTiny13
++ ATTiny2313/2313v
++ ATTiny13/13a
 
 Extras:
 -------

@@ -137,8 +137,7 @@ const struct mcu_t SIM_CORENAME = {
 			.r_ucsra = 0,
 			.r_ucsrb = 0,
 			.r_ucsrc = 0,
-			.r_ubrrl = 0,
-			.r_ubrrh = 0,
+
 
 			.rxc = {
 				.enable = AVR_IO_REGBIT(LINENIR, LENRXOK),
@@ -171,7 +170,23 @@ const struct mcu_t SIM_CORENAME = {
 		.r_adcl = ADCL,
 
 		.r_adcsrb = ADCSRB,
-		.adts = { AVR_IO_REGBIT(ADCSRB, ADTS0), AVR_IO_REGBIT(ADCSRB, ADTS1), AVR_IO_REGBIT(ADCSRB, ADTS2),},
+		.adts = { AVR_IO_REGBIT(ADCSRB, ADTS0), AVR_IO_REGBIT(ADCSRB, ADTS1), AVR_IO_REGBIT(ADCSRB, ADTS2), AVR_IO_REGBIT(ADCSRB, ADTS3),},
+		.adts_op = {
+			[0] = avr_adts_free_running,
+			[1] = avr_adts_external_interrupt_0,
+			[2] = avr_adts_timer_0_compare_match_a,
+			[3] = avr_adts_timer_0_overflow,
+			[4] = avr_adts_timer_1_compare_match_b,
+			[5] = avr_adts_timer_1_overflow,
+			[6] = avr_adts_timer_1_capture_event,
+			[7] = avr_adts_psc_module_0_sync_signal,
+			[8] = avr_adts_psc_module_1_sync_signal,
+			[9] = avr_adts_psc_module_2_sync_signal,
+			[10] = avr_adts_analog_comparator_0,
+			[11] = avr_adts_analog_comparator_1,
+			[12] = avr_adts_analog_comparator_2,
+			[13] = avr_adts_analog_comparator_3,
+		},
 
 		.muxmode = {
 			[0] = AVR_ADC_SINGLE(0), [1] = AVR_ADC_SINGLE(1),
@@ -201,7 +216,8 @@ const struct mcu_t SIM_CORENAME = {
 			[7] = AVR_TIMER_WGM_OCPWM(),
 		},
 		.cs = { AVR_IO_REGBIT(TCCR0B, CS00), AVR_IO_REGBIT(TCCR0B, CS01), AVR_IO_REGBIT(TCCR0B, CS02) },
-		.cs_div = { 0, 0, 3 /* 8 */, 6 /* 64 */, 8 /* 256 */, 10 /* 1024 */ },
+		.cs_div = { 0, 0, 3 /* 8 */, 6 /* 64 */, 8 /* 256 */, 10 /* 1024 */, AVR_TIMER_EXTCLK_CHOOSE, AVR_TIMER_EXTCLK_CHOOSE },
+		.ext_clock_pin = AVR_IO_REGBIT(PORTC, 2), /* External clock pin */
 
 		.r_tcnt = TCNT0,
 
@@ -249,7 +265,8 @@ const struct mcu_t SIM_CORENAME = {
 			[15] = AVR_TIMER_WGM_OCPWM(),
 		},
 		.cs = { AVR_IO_REGBIT(TCCR1B, CS10), AVR_IO_REGBIT(TCCR1B, CS11), AVR_IO_REGBIT(TCCR1B, CS12) },
-		.cs_div = { 0, 0, 3 /* 8 */, 6 /* 64 */, 8 /* 256 */, 10 /* 1024 */	/* External clock T1 is not handled */},
+		.cs_div = { 0, 0, 3 /* 8 */, 6 /* 64 */, 8 /* 256 */, 10 /* 1024 */, AVR_TIMER_EXTCLK_CHOOSE, AVR_TIMER_EXTCLK_CHOOSE },
+		.ext_clock_pin = AVR_IO_REGBIT(PORTC, 3), /* External clock pin */
 
 		.r_tcnt = TCNT1L,
 		.r_tcnth = TCNT1H,
@@ -294,24 +311,7 @@ const struct mcu_t SIM_CORENAME = {
 			},
 		},
 	},
-	.spi = {
-		.disabled = AVR_IO_REGBIT(PRR,PRSPI),
-
-		.r_spdr = SPDR,
-		.r_spcr = SPCR,
-		.r_spsr = SPSR,
-
-		.spe = AVR_IO_REGBIT(SPCR, SPE),
-		.mstr = AVR_IO_REGBIT(SPCR, MSTR),
-
-		.spr = { AVR_IO_REGBIT(SPCR, SPR0), AVR_IO_REGBIT(SPCR, SPR1), AVR_IO_REGBIT(SPSR, SPI2X) },
-		.spi = {
-			.enable = AVR_IO_REGBIT(SPCR, SPIE),
-			.raised = AVR_IO_REGBIT(SPSR, SPIF),
-			.vector = SPI_STC_vect,
-		},
-	},
-
+	AVR_SPI_DECLARE(PRR, PRSPI),
 };
 #endif /* SIM_CORENAME */
 
